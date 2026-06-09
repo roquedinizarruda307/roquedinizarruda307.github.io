@@ -14,10 +14,12 @@ export default function Home() {
   const [stats, setStats] = useState({ saldo: 0, receitas: 0, despesas: 0, pendencias: 0, ativos: 0 })
   const [dividas, setDividas] = useState({ anuidades: 0, mensalidades: 0, eventos: 0 })
   const [notifs, setNotifs] = useState<{ id: string; nome: string; descricao: string; tipo: string }[]>([])
+  const [loading, setLoading] = useState(true)
   const mesAtual = MESES_C[new Date().getMonth()]
 
   useEffect(() => {
     async function load() {
+      setLoading(true)
       const now = new Date()
       const mes = now.getMonth() + 1
       const ano = now.getFullYear()
@@ -46,6 +48,7 @@ export default function Home() {
         mensalidades: pendencias,
         eventos:     (evtP??[]).reduce((s,t)=>s+ +t.valor,0),
       })
+      setLoading(false)   // cards já podem aparecer; notificações carregam em seguida
 
       // Notificações: mensalidades nao_pago + eventos atrasados
       const memIds = [...new Set((mensP??[]).map(r=>r.membro_id))]
@@ -114,7 +117,9 @@ export default function Home() {
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 leading-tight pr-2">{label}</p>
               <Icon size={14} className="text-gray-300 flex-shrink-0 mt-0.5" />
             </div>
-            <p className="text-xl font-black" style={{ color }}>{value}</p>
+            {loading
+              ? <div className="h-6 w-20 rounded bg-gray-100 animate-pulse" />
+              : <p className="text-xl font-black" style={{ color }}>{value}</p>}
           </div>
         ))}
       </div>
