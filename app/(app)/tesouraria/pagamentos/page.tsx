@@ -2,17 +2,30 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
-import { Plus, FileSpreadsheet, ChevronDown, X } from 'lucide-react'
+import { Plus, FileSpreadsheet, X } from 'lucide-react'
 
-const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-const ANOS = [2024, 2025, 2026, 2027]
+const ANOS = [2024, 2025, 2026, 2027, 2028]
 
 type StatusMens = 'pago' | 'isento' | 'nao_pago'
 const inp = "w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-white focus:border-gray-400 transition-colors"
+const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+function inicial(nome: string) {
+  return (nome?.trim()?.[0] ?? '?').toUpperCase()
+}
+
+function baixarCSV(nome: string, linhas: string[][]) {
+  const csv = linhas.map(l => l.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = nome; a.click()
+  URL.revokeObjectURL(url)
+}
 
 // ─── Tab: Mensalidades ────────────────────────────────────────────────────────
-function TabMensalidades({ mes, ano }: { mes: number; ano: number }) {
+function TabMensalidades({ mes, ano, registrar }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void }) {
   const [membros, setMembros] = useState<Membro[]>([])
   const [mapa, setMapa] = useState<Record<string, { id?: string; status: StatusMens }>>({})
   const [loading, setLoading] = useState(true)
@@ -32,6 +45,19 @@ function TabMensalidades({ mes, ano }: { mes: number; ano: number }) {
   }, [mes, ano])
 
   useEffect(() => { fetchDados() }, [fetchDados])
+
+  // disponibiliza dados pro relatório
+  useEffect(() => {
+    registrar(() => {
+      const label = { pago: 'Pago', nao_pago: 'Não pago', isento: 'Isento' }
+      const linhas: string[][] = [['Membro', 'Status', `Mensalidade ${MESES_C[mes-1]}/${ano}`]]
+      for (const m of membros) {
+        const st = mapa[m.id]?.status ?? 'nao_pago'
+        linhas.push([m.nome, label[st], st === 'nao_pago' ? 'R$ 20,00' : '—'])
+      }
+      return linhas
+    })
+  }, [membros, mapa, mes, ano, registrar])
 
   async function setStatus(membroId: string, prox: StatusMens) {
     if (mapa[membroId]?.status === prox) return
@@ -53,30 +79,36 @@ function TabMensalidades({ mes, ano }: { mes: number; ano: number }) {
   if (loading) return <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
   if (membros.length === 0) return <div className="py-12 text-center text-sm text-gray-300">Nenhum membro cadastrado.</div>
 
+  const opcoes = [
+    { s: 'pago'     as StatusMens, label: 'Paga',     bg: '#f0fdf4', color: '#16a34a' },
+    { s: 'nao_pago' as StatusMens, label: 'Não paga', bg: '#fef2f2', color: '#dc2626' },
+    { s: 'isento'   as StatusMens, label: 'Isento',   bg: '#eff6ff', color: '#1d4ed8' },
+  ]
+
   return (
-    <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
-      <div className="grid grid-cols-[1fr_220px] min-w-[480px] px-6 py-3 border-b border-gray-100">
-        <p className="text-xs font-semibold text-gray-400">Membro</p>
-        <p className="text-xs font-semibold text-gray-400">Status</p>
-      </div>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {membros.map((membro, i) => {
         const status: StatusMens = mapa[membro.id]?.status ?? 'nao_pago'
         const isSaving = saving === membro.id
         return (
           <div key={membro.id}
-            className={`grid grid-cols-[1fr_220px] min-w-[480px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
-            <p className="text-sm text-gray-800">{membro.nome}</p>
-            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden w-fit">
-              {([
-                { s: 'pago'     as StatusMens, label: 'Pago',     bg: '#f0fdf4', color: '#16a34a' },
-                { s: 'nao_pago' as StatusMens, label: 'Não pago', bg: '#fef2f2', color: '#dc2626' },
-                { s: 'isento'   as StatusMens, label: 'Isento',   bg: '#eff6ff', color: '#1d4ed8' },
-              ]).map(({ s, label, bg, color }) => {
+            className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm"
+                style={{ background: '#f3f4f6', color: '#6b7280' }}>
+                {inicial(membro.nome)}
+              </div>
+              <p className="font-bold text-gray-900 uppercase tracking-tight text-sm truncate">{membro.nome}</p>
+            </div>
+            <div className="flex items-center bg-gray-100 rounded-xl p-1 flex-shrink-0">
+              {opcoes.map(({ s, label, bg, color }) => {
                 const active = status === s
                 return (
                   <button key={s} onClick={() => setStatus(membro.id, s)} disabled={isSaving}
-                    className="px-3 py-1.5 text-xs font-semibold transition-colors"
-                    style={{ background: active ? bg : '#fff', color: active ? color : '#d1d5db' }}>
+                    className="px-3 sm:px-4 py-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wide rounded-lg transition-all"
+                    style={active
+                      ? { background: bg, color, boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }
+                      : { background: 'transparent', color: '#9ca3af' }}>
                     {label}
                   </button>
                 )
@@ -90,7 +122,7 @@ function TabMensalidades({ mes, ano }: { mes: number; ano: number }) {
 }
 
 // ─── Tab: Anuidades ───────────────────────────────────────────────────────────
-function TabAnuidades({ ano }: { ano: number }) {
+function TabAnuidades({ ano, registrar }: { ano: number; registrar: (fn: () => string[][]) => void }) {
   const [membros, setMembros] = useState<Membro[]>([])
   const [mapa, setMapa] = useState<Record<string, { id?: string; status: string }>>({})
   const [loading, setLoading] = useState(true)
@@ -102,14 +134,30 @@ function TabAnuidades({ ano }: { ano: number }) {
       supabase.from('membros').select('*').order('nome'),
       supabase.from('anuidades').select('*').eq('ano', ano),
     ])
-    const mapa: Record<string, { id?: string; status: string }> = {}
-    for (const reg of r ?? []) mapa[reg.membro_id] = { id: reg.id, status: reg.status }
+    const mp: Record<string, { id?: string; status: string }> = {}
+    for (const reg of r ?? []) mp[reg.membro_id] = { id: reg.id, status: reg.status }
     setMembros(m ?? [])
-    setMapa(mapa)
+    setMapa(mp)
     setLoading(false)
   }, [ano])
 
   useEffect(() => { fetchDados() }, [fetchDados])
+
+  const stStyle = (s: string) =>
+    s === 'pago'     ? { bg: '#f0fdf4', color: '#16a34a', label: 'Pago' } :
+    s === 'atrasado' ? { bg: '#fef2f2', color: '#dc2626', label: 'Atrasado' } :
+                       { bg: '#fefce8', color: '#a16207', label: 'Pendente' }
+
+  useEffect(() => {
+    registrar(() => {
+      const linhas: string[][] = [['Membro', 'Status', `Anuidade ${ano}`]]
+      for (const m of membros) {
+        const st = mapa[m.id]?.status ?? 'pendente'
+        linhas.push([m.nome, stStyle(st).label, st !== 'pago' ? 'R$ 120,00' : '—'])
+      }
+      return linhas
+    })
+  }, [membros, mapa, ano, registrar])
 
   async function ciclar(membroId: string) {
     const ciclo = ['pendente', 'pago', 'atrasado']
@@ -127,28 +175,24 @@ function TabAnuidades({ ano }: { ano: number }) {
     setSaving(null)
   }
 
-  const stStyle = (s: string) =>
-    s === 'pago'     ? { bg: '#f0fdf4', color: '#16a34a', label: 'Pago' } :
-    s === 'atrasado' ? { bg: '#fef2f2', color: '#dc2626', label: 'Atrasado' } :
-                       { bg: '#fefce8', color: '#a16207', label: 'Pendente' }
-
   if (loading) return <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
+  if (membros.length === 0) return <div className="py-12 text-center text-sm text-gray-300">Nenhum membro cadastrado.</div>
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
-      <div className="grid grid-cols-[1fr_120px] min-w-[380px] px-6 py-3 border-b border-gray-100">
-        <p className="text-xs font-semibold text-gray-400">Membro</p>
-        <p className="text-xs font-semibold text-gray-400">Status</p>
-      </div>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {membros.map((m, i) => {
         const status = mapa[m.id]?.status ?? 'pendente'
         const st = stStyle(status)
         return (
           <div key={m.id}
-            className={`grid grid-cols-[1fr_120px] min-w-[380px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
-            <p className="text-sm text-gray-800">{m.nome}</p>
+            className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm"
+                style={{ background: '#f3f4f6', color: '#6b7280' }}>{inicial(m.nome)}</div>
+              <p className="font-bold text-gray-900 uppercase tracking-tight text-sm truncate">{m.nome}</p>
+            </div>
             <button onClick={() => ciclar(m.id)} disabled={saving === m.id}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg w-fit transition-colors"
+              className="text-[11px] sm:text-xs font-bold uppercase tracking-wide px-4 py-2 rounded-lg flex-shrink-0 transition-colors"
               style={{ background: st.bg, color: st.color }}>
               {saving === m.id ? '...' : st.label}
             </button>
@@ -160,7 +204,7 @@ function TabAnuidades({ ano }: { ano: number }) {
 }
 
 // ─── Tab: Eventos ─────────────────────────────────────────────────────────────
-function TabEventos({ mes, ano }: { mes: number; ano: number }) {
+function TabEventos({ mes, ano, registrar }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void }) {
   const [eventos, setEventos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -177,17 +221,25 @@ function TabEventos({ mes, ano }: { mes: number; ano: number }) {
 
   useEffect(() => { fetchDados() }, [fetchDados])
 
+  const stStyle = (s: string) =>
+    s === 'pago'     ? { bg: '#f0fdf4', color: '#16a34a', label: 'Pago' } :
+    s === 'atrasado' ? { bg: '#fef2f2', color: '#dc2626', label: 'Atrasado' } :
+                       { bg: '#fefce8', color: '#a16207', label: 'Pendente' }
+
+  useEffect(() => {
+    registrar(() => {
+      const linhas: string[][] = [['Evento', 'Descrição', 'Valor', 'Status']]
+      for (const ev of eventos) linhas.push([ev.nome, ev.descricao ?? '', fmt(+ev.valor), stStyle(ev.status).label])
+      return linhas
+    })
+  }, [eventos, registrar])
+
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
     await supabase.from('pagamentos_eventos').insert([{ ...form, valor: +form.valor, status: 'pendente' }])
     setShowForm(false); setForm({ nome: '', data: `${ano}-${String(mes).padStart(2,'0')}-01`, valor: '', descricao: '' })
     fetchDados()
   }
-
-  const stStyle = (s: string) =>
-    s === 'pago'     ? { bg: '#f0fdf4', color: '#16a34a', label: 'Pago' } :
-    s === 'atrasado' ? { bg: '#fef2f2', color: '#dc2626', label: 'Atrasado' } :
-                       { bg: '#fefce8', color: '#a16207', label: 'Pendente' }
 
   return (
     <div className="space-y-4">
@@ -200,7 +252,7 @@ function TabEventos({ mes, ano }: { mes: number; ano: number }) {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm font-semibold text-gray-800">Novo evento</p>
             <button onClick={() => setShowForm(false)} className="text-gray-300 hover:text-gray-500"><X size={15} /></button>
@@ -223,11 +275,11 @@ function TabEventos({ mes, ano }: { mes: number; ano: number }) {
       {loading ? (
         <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
       ) : eventos.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-100 py-16 text-center text-sm text-gray-300">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-16 text-center text-sm text-gray-300">
           Nenhum evento em {MESES_C[mes-1]}/{ano}.
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           {eventos.map((ev, i) => {
             const st = stStyle(ev.status)
             return (
@@ -238,12 +290,8 @@ function TabEventos({ mes, ano }: { mes: number; ano: number }) {
                   {ev.descricao && <p className="text-xs text-gray-400 mt-0.5">{ev.descricao}</p>}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-gray-700">
-                    {(+ev.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </span>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ background: st.bg, color: st.color }}>
-                    {st.label}
-                  </span>
+                  <span className="text-sm font-semibold text-gray-700">{fmt(+ev.valor)}</span>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ background: st.bg, color: st.color }}>{st.label}</span>
                 </div>
               </div>
             )
@@ -262,6 +310,10 @@ export default function PagamentosPage() {
   const [tab, setTab] = useState<'mensalidades' | 'anuidades' | 'eventos'>('mensalidades')
   const [resumo, setResumo] = useState({ pendente: 0, anuidade: 0, mensalidades: 0, eventos: 0 })
 
+  // função que gera as linhas do relatório da aba ativa
+  const [gerarLinhas, setGerarLinhas] = useState<() => string[][]>(() => () => [])
+  const registrar = useCallback((fn: () => string[][]) => setGerarLinhas(() => fn), [])
+
   useEffect(() => { fetchResumo() }, [mesSel, anoSel])
 
   async function fetchResumo() {
@@ -277,78 +329,107 @@ export default function PagamentosPage() {
     setResumo({ pendente: totalMens + totalAnu + totalEv, anuidade: totalAnu, mensalidades: totalMens, eventos: totalEv })
   }
 
-  const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
   const mesLabel = MESES_C[mesSel - 1]
+  const mostraMeses = tab !== 'anuidades'
   const tabs = [
     { id: 'mensalidades' as const, label: 'Mensalidades' },
     { id: 'anuidades'    as const, label: 'Anuidades' },
     { id: 'eventos'      as const, label: 'Eventos' },
   ]
 
+  const cards = [
+    { label: `Pendente em ${mesLabel}`,    value: resumo.pendente,     destaque: true },
+    { label: `Anuidade ${anoSel}`,          value: resumo.anuidade,     destaque: false },
+    { label: `Mensalidades ${mesLabel}`,    value: resumo.mensalidades, destaque: false },
+    { label: `Eventos ${mesLabel}`,         value: resumo.eventos,      destaque: false },
+  ]
+
+  function exportarRelatorio() {
+    const linhas = gerarLinhas()
+    const nome = `${tab}_${mostraMeses ? mesLabel + '_' : ''}${anoSel}.csv`
+    baixarCSV(nome, linhas)
+  }
+
   return (
-    <div className="p-7 max-w-6xl space-y-5">
+    <div className="p-4 sm:p-7 max-w-6xl space-y-5">
 
       {/* Cards resumo */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white rounded-xl border border-gray-100 px-5 py-4">
-          <p className="text-xs text-gray-400 mb-2">Pendente em {mesLabel}</p>
-          <p className="text-xl font-bold" style={{ color: resumo.pendente > 0 ? '#c0392b' : '#111' }}>{fmt(resumo.pendente)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-100 px-5 py-4">
-          <p className="text-xs text-gray-400 mb-2">Anuidade {anoSel}</p>
-          <p className="text-xl font-bold text-gray-900">{fmt(resumo.anuidade)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-100 px-5 py-4">
-          <p className="text-xs text-gray-400 mb-2">Mensalidades {mesLabel}</p>
-          <p className="text-xl font-bold text-gray-900">{fmt(resumo.mensalidades)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-100 px-5 py-4">
-          <p className="text-xs text-gray-400 mb-2">Eventos {mesLabel}</p>
-          <p className="text-xl font-bold text-gray-900">{fmt(resumo.eventos)}</p>
+        {cards.map(c => (
+          <div key={c.label}
+            className="rounded-2xl border px-5 py-5 shadow-sm"
+            style={c.destaque
+              ? { background: '#fef2f2', borderColor: '#fde2e2' }
+              : { background: '#fff', borderColor: '#f3f4f6' }}>
+            <p className="text-[11px] font-bold uppercase tracking-widest mb-3"
+              style={{ color: c.destaque ? '#dc2626' : '#9ca3af' }}>{c.label}</p>
+            <p className="text-2xl font-black" style={{ color: c.destaque ? '#c0392b' : '#111827' }}>{fmt(c.value)}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filtros: meses + anos em pills */}
+      <div className="space-y-3">
+        {mostraMeses && (
+          <div className="flex flex-wrap gap-2">
+            {MESES_C.map((m, i) => {
+              const active = mesSel === i + 1
+              return (
+                <button key={m} onClick={() => setMesSel(i + 1)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide transition-all"
+                  style={active
+                    ? { background: '#c0392b', color: '#fff', boxShadow: '0 2px 8px rgba(192,57,43,0.3)' }
+                    : { background: '#fff', color: '#9ca3af', border: '1px solid #f0f0f0' }}>
+                  {m}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {ANOS.map(a => {
+            const active = anoSel === a
+            return (
+              <button key={a} onClick={() => setAnoSel(a)}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all"
+                style={active
+                  ? { background: '#111827', color: '#fff' }
+                  : { background: '#fff', color: '#9ca3af', border: '1px solid #f0f0f0' }}>
+                {a}
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="bg-white rounded-xl border border-gray-100 px-5 py-3.5 flex items-center gap-3 flex-wrap">
-        <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-          {tabs.map(({ id, label }) => (
+      {/* Sub-abas segmentadas */}
+      <div className="flex bg-gray-100 rounded-2xl p-1.5">
+        {tabs.map(({ id, label }) => {
+          const active = tab === id
+          return (
             <button key={id} onClick={() => setTab(id)}
-              className="px-4 py-2 text-xs font-semibold transition-colors"
-              style={tab === id ? { background: '#c0392b', color: '#fff' } : { background: 'transparent', color: '#9ca3af' }}>
+              className="flex-1 py-3 rounded-xl text-sm font-bold uppercase tracking-wide transition-all"
+              style={active
+                ? { background: '#fff', color: '#111827', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
+                : { background: 'transparent', color: '#9ca3af' }}>
               {label}
             </button>
-          ))}
-        </div>
+          )
+        })}
+      </div>
 
-        {tab !== 'anuidades' && (
-          <div className="relative">
-            <select value={mesSel} onChange={e => setMesSel(+e.target.value)}
-              className="appearance-none border border-gray-200 rounded-lg pl-3.5 pr-7 py-2 text-sm bg-white cursor-pointer">
-              {MESES.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
-            </select>
-            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </div>
-        )}
-
-        <div className="relative">
-          <select value={anoSel} onChange={e => setAnoSel(+e.target.value)}
-            className="appearance-none border border-gray-200 rounded-lg pl-3.5 pr-7 py-2 text-sm bg-white cursor-pointer">
-            {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        </div>
-
-        <div className="flex-1" />
-
-        <button className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3.5 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors">
-          <FileSpreadsheet size={13} className="text-emerald-500" /> Relatório
+      {/* Botão Relatório */}
+      <div>
+        <button onClick={exportarRelatorio}
+          className="flex items-center gap-2 border border-gray-200 bg-white rounded-xl px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gray-600 hover:bg-gray-50 transition-colors shadow-sm">
+          <FileSpreadsheet size={15} className="text-emerald-500" /> Relatório
         </button>
       </div>
 
       {/* Conteúdo */}
-      {tab === 'mensalidades' && <TabMensalidades mes={mesSel} ano={anoSel} />}
-      {tab === 'anuidades'    && <TabAnuidades ano={anoSel} />}
-      {tab === 'eventos'      && <TabEventos mes={mesSel} ano={anoSel} />}
+      {tab === 'mensalidades' && <TabMensalidades mes={mesSel} ano={anoSel} registrar={registrar} />}
+      {tab === 'anuidades'    && <TabAnuidades ano={anoSel} registrar={registrar} />}
+      {tab === 'eventos'      && <TabEventos mes={mesSel} ano={anoSel} registrar={registrar} />}
     </div>
   )
 }
