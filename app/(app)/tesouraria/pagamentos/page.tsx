@@ -5,7 +5,8 @@ import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, FileSpreadsheet, X } from 'lucide-react'
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-const ANOS = [2024, 2025, 2026, 2027, 2028]
+const ANO_ATUAL = new Date().getFullYear()
+const ANOS = [ANO_ATUAL, ANO_ATUAL + 1, ANO_ATUAL + 2]
 
 type StatusMens = 'pago' | 'isento' | 'nao_pago'
 const inp = "w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-white focus:border-gray-400 transition-colors"
