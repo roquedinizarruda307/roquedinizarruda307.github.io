@@ -369,38 +369,36 @@ export default function PagamentosPage() {
         ))}
       </div>
 
-      {/* Filtros: meses + anos em pills */}
-      <div className="space-y-3">
-        {mostraMeses && (
-          <div className="flex flex-wrap gap-2">
-            {MESES_C.map((m, i) => {
-              const active = mesSel === i + 1
-              return (
-                <button key={m} onClick={() => setMesSel(i + 1)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide transition-all"
-                  style={active
-                    ? { background: '#c0392b', color: '#fff', boxShadow: '0 2px 8px rgba(192,57,43,0.3)' }
-                    : { background: '#fff', color: '#9ca3af', border: '1px solid #f0f0f0' }}>
-                  {m}
-                </button>
-              )
-            })}
-          </div>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {ANOS.map(a => {
-            const active = anoSel === a
-            return (
-              <button key={a} onClick={() => setAnoSel(a)}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all"
-                style={active
-                  ? { background: '#111827', color: '#fff' }
-                  : { background: '#fff', color: '#9ca3af', border: '1px solid #f0f0f0' }}>
-                {a}
-              </button>
-            )
-          })}
-        </div>
+      {/* Filtros: meses + anos na mesma linha */}
+      <div className="flex flex-wrap items-center gap-2">
+        {mostraMeses && MESES_C.map((m, i) => {
+          const active = mesSel === i + 1
+          return (
+            <button key={m} onClick={() => setMesSel(i + 1)}
+              className="px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide transition-all"
+              style={active
+                ? { background: '#c0392b', color: '#fff', boxShadow: '0 2px 8px rgba(192,57,43,0.3)' }
+                : { background: '#fff', color: '#9ca3af', border: '1px solid #f0f0f0' }}>
+              {m}
+            </button>
+          )
+        })}
+
+        {/* separador */}
+        {mostraMeses && <div className="w-px h-6 bg-gray-200 mx-1" />}
+
+        {ANOS.map(a => {
+          const active = anoSel === a
+          return (
+            <button key={a} onClick={() => setAnoSel(a)}
+              className="px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all"
+              style={active
+                ? { background: '#111827', color: '#fff' }
+                : { background: '#fff', color: '#9ca3af', border: '1px solid #f0f0f0' }}>
+              {a}
+            </button>
+          )
+        })}
       </div>
 
       {/* Sub-abas segmentadas */}
