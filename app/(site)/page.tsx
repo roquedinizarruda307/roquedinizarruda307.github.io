@@ -8,7 +8,7 @@ export default function Home() {
       logoText="DeMolay"
       navLinks={[
         { label: 'História',   href: '/historia' },
-        { label: 'Antigos MCs',href: '/antigos-mc' },
+        { label: 'Past MC',    href: '/antigos-mc' },
         { label: 'Fotos',      href: '/fotos' },
         { label: 'Eventos',    href: '/eventos' },
         { label: 'Tesouraria', href: '/login' },
