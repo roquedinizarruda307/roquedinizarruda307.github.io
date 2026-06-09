@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Trash2 } from 'lucide-react'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
@@ -31,6 +31,12 @@ export default function FluxoPage() {
       .order('data', { ascending: false })
     setRows(data ?? [])
     setLoading(false)
+  }
+
+  async function excluir(r: any) {
+    if (!confirm(`Excluir "${r.descricao}" (${fmt(+r.valor)})?`)) return
+    await supabase.from('transacoes').delete().eq('id', r.id)
+    load()
   }
 
   const entradas = rows.filter(r => r.tipo === 'entrada').reduce((s, r) => s + +r.valor, 0)
@@ -79,10 +85,10 @@ export default function FluxoPage() {
 
       {/* Tabela */}
       <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
-        <div className="min-w-[600px]">
-        <div className="grid grid-cols-[120px_1fr_150px_80px_120px] px-6 py-3 border-b border-gray-100">
-          {['Data','Descrição','Categoria','Recibo','Valor'].map(h => (
-            <p key={h} className="text-xs font-semibold text-gray-400">{h}</p>
+        <div className="min-w-[660px]">
+        <div className="grid grid-cols-[110px_1fr_140px_70px_120px_60px] px-6 py-3 border-b border-gray-100">
+          {['Data','Descrição','Categoria','Recibo','Valor',''].map((h, idx) => (
+            <p key={idx} className="text-xs font-semibold text-gray-400">{h}</p>
           ))}
         </div>
         {loading ? (
@@ -91,7 +97,7 @@ export default function FluxoPage() {
           <div className="py-20 text-center text-sm text-gray-300">Nenhuma movimentação neste período.</div>
         ) : rows.map((r, i) => (
           <div key={r.id}
-            className={`grid grid-cols-[120px_1fr_150px_80px_120px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < rows.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            className={`grid grid-cols-[110px_1fr_140px_70px_120px_60px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < rows.length - 1 ? 'border-b border-gray-50' : ''}`}>
             <p className="text-sm text-gray-500">{new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
             <p className="text-sm text-gray-800 pr-4">{r.descricao}</p>
             <p className="text-sm text-gray-400">{r.categoria ?? '—'}</p>
@@ -103,6 +109,12 @@ export default function FluxoPage() {
             <p className="text-sm font-semibold" style={{ color: r.tipo === 'entrada' ? '#16a34a' : '#c0392b' }}>
               {r.tipo === 'entrada' ? '+' : '-'}{fmt(+r.valor)}
             </p>
+            <div className="flex justify-end">
+              <button onClick={() => excluir(r)} title="Excluir"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                <Trash2 size={14} />
+              </button>
+            </div>
           </div>
         ))}
         </div>

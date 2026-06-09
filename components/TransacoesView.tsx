@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ChevronDown, FileSpreadsheet, Plus, X } from 'lucide-react'
+import { ChevronDown, FileSpreadsheet, Plus, X, Pencil, Trash2 } from 'lucide-react'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const CATS = ['Mensalidade','Anuidade','Evento','Doação','Material','Alimentação','Transporte','Outro']
@@ -21,6 +21,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
   const [rows, setRows]     = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState({ descricao: '', origem_destino: '', categoria: '', valor: '', data: now.toISOString().split('T')[0] })
   const anos = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i)
   const isE  = tipo === 'entrada'
@@ -43,14 +44,41 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
     setLoading(false)
   }
 
+  function resetForm() {
+    setForm({ descricao: '', origem_destino: '', categoria: '', valor: '', data: now.toISOString().split('T')[0] })
+    setEditId(null)
+  }
+
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
-    await supabase.from('transacoes').insert([{
+    const payload = {
       tipo, descricao: form.descricao, origem_destino: form.origem_destino,
       categoria: form.categoria || null, valor: +form.valor, data: form.data,
-    }])
-    setForm({ descricao: '', origem_destino: '', categoria: '', valor: '', data: now.toISOString().split('T')[0] })
+    }
+    if (editId) {
+      await supabase.from('transacoes').update(payload).eq('id', editId)
+    } else {
+      await supabase.from('transacoes').insert([payload])
+    }
+    resetForm()
     setShowForm(false)
+    load()
+  }
+
+  function editar(r: any) {
+    setEditId(r.id)
+    setForm({
+      descricao: r.descricao ?? '', origem_destino: r.origem_destino ?? '',
+      categoria: r.categoria ?? '', valor: String(r.valor ?? ''),
+      data: (r.data ?? now.toISOString().split('T')[0]).slice(0, 10),
+    })
+    setShowForm(true)
+  }
+
+  async function excluir(r: any) {
+    if (!confirm(`Excluir "${r.descricao}" (${fmt(+r.valor)})?`)) return
+    await supabase.from('transacoes').delete().eq('id', r.id)
+    if (editId === r.id) { resetForm(); setShowForm(false) }
     load()
   }
 
@@ -98,7 +126,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
           <FileSpreadsheet size={14} style={{ color: cor }} /> Exportar
         </button>
 
-        <button onClick={() => setShowForm(!showForm)}
+        <button onClick={() => { if (showForm) { resetForm(); setShowForm(false) } else { resetForm(); setShowForm(true) } }}
           className="flex items-center gap-1.5 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:opacity-90 transition-opacity"
           style={{ background: cor }}>
           <Plus size={14} /> Nova {isE ? 'entrada' : 'saída'}
@@ -109,8 +137,10 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
       {showForm && (
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-gray-800">{isE ? 'Nova entrada' : 'Nova saída'}</p>
-            <button onClick={() => setShowForm(false)} className="text-gray-300 hover:text-gray-500"><X size={15} /></button>
+            <p className="text-sm font-semibold text-gray-800">
+              {editId ? 'Editar ' : (isE ? 'Nova entrada' : 'Nova saída')}{editId ? (isE ? 'entrada' : 'saída') : ''}
+            </p>
+            <button onClick={() => { resetForm(); setShowForm(false) }} className="text-gray-300 hover:text-gray-500"><X size={15} /></button>
           </div>
           <form onSubmit={salvar}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -135,8 +165,8 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
             </div>
             <div className="flex gap-2 mt-4">
               <button type="submit" className="text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90"
-                style={{ background: cor }}>Salvar</button>
-              <button type="button" onClick={() => setShowForm(false)}
+                style={{ background: cor }}>{editId ? 'Salvar alterações' : 'Salvar'}</button>
+              <button type="button" onClick={() => { resetForm(); setShowForm(false) }}
                 className="border border-gray-200 text-gray-500 text-sm px-4 py-2 rounded-lg hover:bg-gray-50">Cancelar</button>
             </div>
           </form>
@@ -144,10 +174,11 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
       )}
 
       {/* Tabela */}
-      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <div className="grid grid-cols-[120px_1fr_150px_80px_120px] px-6 py-3 border-b border-gray-100">
-          {['Data','Descrição','Origem/Destino','Recibo','Valor'].map(h => (
-            <p key={h} className="text-xs font-semibold text-gray-400">{h}</p>
+      <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
+        <div className="min-w-[640px]">
+        <div className="grid grid-cols-[110px_1fr_140px_70px_120px_80px] px-6 py-3 border-b border-gray-100">
+          {['Data','Descrição','Origem/Destino','Recibo','Valor',''].map((h, idx) => (
+            <p key={idx} className="text-xs font-semibold text-gray-400">{h}</p>
           ))}
         </div>
         {loading ? (
@@ -156,7 +187,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
           <div className="py-20 text-center text-sm text-gray-300">Sem registros neste período.</div>
         ) : rows.map((r, i) => (
           <div key={r.id}
-            className={`grid grid-cols-[120px_1fr_150px_80px_120px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < rows.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            className={`grid grid-cols-[110px_1fr_140px_70px_120px_80px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < rows.length - 1 ? 'border-b border-gray-50' : ''}`}>
             <p className="text-sm text-gray-500">{new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
             <p className="text-sm text-gray-800 pr-4">{r.descricao}</p>
             <p className="text-sm text-gray-400">{r.origem_destino || '—'}</p>
@@ -168,8 +199,19 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
             <p className="text-sm font-semibold" style={{ color: cor }}>
               {isE ? '+' : '-'}{fmt(+r.valor)}
             </p>
+            <div className="flex items-center gap-1 justify-end">
+              <button onClick={() => editar(r)} title="Editar"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                <Pencil size={14} />
+              </button>
+              <button onClick={() => excluir(r)} title="Excluir"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                <Trash2 size={14} />
+              </button>
+            </div>
           </div>
         ))}
+        </div>
       </div>
 
     </div>
