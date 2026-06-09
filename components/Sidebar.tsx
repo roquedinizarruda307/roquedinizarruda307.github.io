@@ -46,8 +46,8 @@ export default function Sidebar() {
 
         {/* Logo */}
         <div className="px-6 pt-6 pb-5 flex items-center gap-3">
-          <Image src="/brasao.png" alt="Brasão DeMolay" width={40} height={40}
-            className="rounded-lg object-cover flex-shrink-0" />
+          <Image src="/logo-rda.png" alt="Brasão RDA 307" width={44} height={44}
+            className="rounded-xl object-cover flex-shrink-0" />
           <div>
             <p className="text-white font-black text-base tracking-tight leading-none">DEMOLAY</p>
             <div className="flex items-center gap-1.5 mt-1">
