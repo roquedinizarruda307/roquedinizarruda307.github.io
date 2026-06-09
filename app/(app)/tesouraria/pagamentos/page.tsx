@@ -60,11 +60,35 @@ function TabMensalidades({ mes, ano, registrar }: { mes: number; ano: number; re
     })
   }, [membros, mapa, mes, ano, registrar])
 
+  // Cria a entrada no caixa correspondente à mensalidade paga (evita duplicar)
+  async function gerarReceita(mensalidadeId: string, membro: Membro) {
+    const { data: existe } = await supabase.from('transacoes')
+      .select('id').eq('mensalidade_id', mensalidadeId).limit(1)
+    if (existe && existe.length) return
+    const hoje = new Date().toISOString().slice(0, 10)
+    await supabase.from('transacoes').insert([{
+      tipo: 'entrada',
+      valor: 20,
+      data: hoje,
+      categoria: 'Mensalidade',
+      descricao: `Mensalidade ${MESES_C[mes - 1]}/${ano} — ${membro.nome}`,
+      membro_id: membro.id,
+      mensalidade_id: mensalidadeId,
+    }])
+  }
+
+  // Remove a entrada do caixa ao desmarcar o pagamento
+  async function removerReceita(mensalidadeId: string) {
+    await supabase.from('transacoes').delete().eq('mensalidade_id', mensalidadeId)
+  }
+
   async function setStatus(membroId: string, prox: StatusMens) {
     if (mapa[membroId]?.status === prox) return
-    const id = mapa[membroId]?.id
+    const membro = membros.find(m => m.id === membroId)!
+    let id = mapa[membroId]?.id
     setSaving(membroId)
     setMapa(prev => ({ ...prev, [membroId]: { ...prev[membroId], status: prox } }))
+
     if (id) {
       await supabase.from('mensalidades').update({ status: prox, data_pagamento: prox === 'pago' ? new Date().toISOString() : null }).eq('id', id)
     } else {
@@ -72,7 +96,13 @@ function TabMensalidades({ mes, ano, registrar }: { mes: number; ano: number; re
         membro_id: membroId, mes, ano, valor: 20, status: prox,
         data_pagamento: prox === 'pago' ? new Date().toISOString() : null,
       }]).select('id').single()
-      if (data) setMapa(prev => ({ ...prev, [membroId]: { id: data.id, status: prox } }))
+      if (data) { id = data.id; setMapa(prev => ({ ...prev, [membroId]: { id: data.id, status: prox } })) }
+    }
+
+    // Caixa: entra quando paga, sai quando desmarca
+    if (id) {
+      if (prox === 'pago') await gerarReceita(id, membro)
+      else await removerReceita(id)
     }
     setSaving(null)
   }
