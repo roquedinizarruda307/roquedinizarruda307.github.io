@@ -4,9 +4,9 @@ export default function FotosPage() {
   return (
     <>
       <PublicNav />
-      <main className="max-w-5xl mx-auto px-8 py-16 text-white">
+      <main className="max-w-5xl mx-auto px-5 md:px-8 py-12 md:py-16 text-white">
         <p className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: '#c0392b' }}>Galeria</p>
-        <h1 className="text-4xl font-black tracking-tight mb-8">Fotos</h1>
+        <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-6 md:mb-8">Fotos</h1>
         <p className="text-base leading-relaxed mb-10" style={{ color: 'rgba(255,255,255,0.6)' }}>
           Momentos e registros do Capítulo Nº 307.
         </p>

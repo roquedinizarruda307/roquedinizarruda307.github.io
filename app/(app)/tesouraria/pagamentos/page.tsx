@@ -54,8 +54,8 @@ function TabMensalidades({ mes, ano }: { mes: number; ano: number }) {
   if (membros.length === 0) return <div className="py-12 text-center text-sm text-gray-300">Nenhum membro cadastrado.</div>
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-      <div className="grid grid-cols-[1fr_220px] px-6 py-3 border-b border-gray-100">
+    <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
+      <div className="grid grid-cols-[1fr_220px] min-w-[480px] px-6 py-3 border-b border-gray-100">
         <p className="text-xs font-semibold text-gray-400">Membro</p>
         <p className="text-xs font-semibold text-gray-400">Status</p>
       </div>
@@ -64,7 +64,7 @@ function TabMensalidades({ mes, ano }: { mes: number; ano: number }) {
         const isSaving = saving === membro.id
         return (
           <div key={membro.id}
-            className={`grid grid-cols-[1fr_220px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            className={`grid grid-cols-[1fr_220px] min-w-[480px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
             <p className="text-sm text-gray-800">{membro.nome}</p>
             <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden w-fit">
               {([
@@ -135,8 +135,8 @@ function TabAnuidades({ ano }: { ano: number }) {
   if (loading) return <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-      <div className="grid grid-cols-[1fr_120px] px-6 py-3 border-b border-gray-100">
+    <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
+      <div className="grid grid-cols-[1fr_120px] min-w-[380px] px-6 py-3 border-b border-gray-100">
         <p className="text-xs font-semibold text-gray-400">Membro</p>
         <p className="text-xs font-semibold text-gray-400">Status</p>
       </div>
@@ -145,7 +145,7 @@ function TabAnuidades({ ano }: { ano: number }) {
         const st = stStyle(status)
         return (
           <div key={m.id}
-            className={`grid grid-cols-[1fr_120px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            className={`grid grid-cols-[1fr_120px] min-w-[380px] px-6 py-3.5 items-center hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
             <p className="text-sm text-gray-800">{m.nome}</p>
             <button onClick={() => ciclar(m.id)} disabled={saving === m.id}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg w-fit transition-colors"

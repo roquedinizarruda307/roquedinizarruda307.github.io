@@ -72,7 +72,10 @@ export default function LoginPage() {
         @keyframes splashJacques { 0%{opacity:0;transform:translateY(60px) scale(1.08);filter:brightness(.4)} 60%{opacity:1;filter:brightness(1.1)} 100%{opacity:1;transform:translateY(0) scale(1);filter:brightness(1)} }
 
         .orb { position:absolute; border-radius:50%; filter:blur(120px); pointer-events:none; }
-        @media (max-width: 640px) { .login-photo { display:none !important; } }
+        @media (max-width: 640px) {
+          .login-photo { display:none !important; }
+          .login-card  { padding:32px 22px !important; border-radius:18px !important; }
+        }
       `}</style>
 
       <div style={{ position:'fixed', inset:0, background:'#0e0101', fontFamily:"'DM Sans', sans-serif", overflow:'hidden' }}>
@@ -126,7 +129,7 @@ export default function LoginPage() {
         {phase === 'form' && (
           <div style={{ position:'fixed', inset:0, zIndex:60, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(4,0,0,.75)', backdropFilter:'blur(12px)' }}
             onClick={e => { if (e.target === e.currentTarget) setPhase('hero') }}>
-            <div style={{ width:'100%', maxWidth:420, padding:'44px 40px', display:'flex', flexDirection:'column', justifyContent:'center', position:'relative', borderRadius:24, border:'1px solid rgba(255,255,255,.08)', boxShadow:'0 40px 120px rgba(0,0,0,.7)', animation:'cardIn .55s cubic-bezier(.22,1,.36,1) both', background:'#0c0606' }}>
+            <div className="login-card" style={{ width:'100%', maxWidth:420, padding:'44px 40px', display:'flex', flexDirection:'column', justifyContent:'center', position:'relative', borderRadius:24, border:'1px solid rgba(255,255,255,.08)', boxShadow:'0 40px 120px rgba(0,0,0,.7)', animation:'cardIn .55s cubic-bezier(.22,1,.36,1) both', background:'#0c0606' }}>
 
               {/* Formulário */}
               <div>

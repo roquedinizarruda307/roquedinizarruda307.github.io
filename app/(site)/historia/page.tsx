@@ -4,9 +4,9 @@ export default function HistoriaPage() {
   return (
     <>
       <PublicNav />
-      <main className="max-w-3xl mx-auto px-8 py-16 text-white">
+      <main className="max-w-3xl mx-auto px-5 md:px-8 py-12 md:py-16 text-white">
         <p className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: '#c0392b' }}>Nossa História</p>
-        <h1 className="text-4xl font-black tracking-tight mb-8">Capítulo Roque Diniz Arruda nº 307</h1>
+        <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-6 md:mb-8">Capítulo Roque Diniz Arruda nº 307</h1>
         <div className="space-y-5 text-base leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
           <p>
             O Capítulo Roque Diniz Arruda nº 307 é uma das mais importantes organizações juvenis

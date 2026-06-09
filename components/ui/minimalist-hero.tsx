@@ -41,10 +41,22 @@ export const MinimalistHero = ({
         @keyframes mhFadeUp   { from{opacity:0;transform:translateY(50px)} to{opacity:1;transform:translateY(0)} }
         @keyframes mhFadeRight{ from{opacity:0;transform:translateX(40px)} to{opacity:1;transform:translateX(0)} }
         @keyframes mhFade     { from{opacity:0} to{opacity:1} }
+
+        @media (max-width: 768px) {
+          .mh-nav   { top: 18px !important; right: 16px !important; gap: 16px !important; }
+          .mh-nav a { font-size: 11px !important; }
+          .mh-imgwrap { padding-right: 0 !important; align-items: center !important; }
+          .mh-img   { height: 52vh !important; }
+          .mh-title { right: 0 !important; left: 0 !important; top: auto !important; bottom: 8% !important;
+                      transform: none !important; text-align: center !important; padding: 0 16px !important; }
+          .mh-title h1 { font-size: clamp(2.2rem, 13vw, 4rem) !important; }
+          .mh-insta { top: 18px !important; left: 16px !important; font-size: 10px !important; }
+          .mh-loc   { bottom: 16px !important; right: 0 !important; left: 0 !important; text-align: center !important; }
+        }
       `}</style>
 
       {/* Nav — topo direito */}
-      <nav style={{ position: 'absolute', top: 32, right: 48, zIndex: 30, display: 'flex', gap: 40, animation: 'mhFadeDown .5s ease both' }}>
+      <nav className="mh-nav" style={{ position: 'absolute', top: 32, right: 48, zIndex: 30, display: 'flex', gap: 40, animation: 'mhFadeDown .5s ease both' }}>
         {navLinks.map(link => (
           <a key={link.label} href={link.href}
             onClick={(e) => {
@@ -64,7 +76,7 @@ export const MinimalistHero = ({
       </nav>
 
       {/* Container central — flex garante centralização horizontal */}
-      <div style={{
+      <div className="mh-imgwrap" style={{
         position: 'absolute',
         inset: 0,
         display: 'flex',
@@ -77,6 +89,7 @@ export const MinimalistHero = ({
         <div style={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           {/* Jacques */}
           <img
+            className="mh-img"
             src={asset(imageSrc)} alt={imageAlt}
             style={{
               position: 'relative',
@@ -97,7 +110,7 @@ export const MinimalistHero = ({
       </div>
 
       {/* Texto grande — enorme, branco, sobreposto à figura, centralizado na altura */}
-      <div style={{ position: 'absolute', right: 48, top: '50%', transform: 'translateY(-50%)', zIndex: 30, textAlign: 'left' }}>
+      <div className="mh-title" style={{ position: 'absolute', right: 48, top: '50%', transform: 'translateY(-50%)', zIndex: 30, textAlign: 'left' }}>
         <div style={{ animation: 'mhFadeRight .8s cubic-bezier(.22,1,.36,1) .6s both' }}>
           <h1 style={{
             fontSize: 'clamp(3rem, 8.5vw, 9rem)',
@@ -118,6 +131,7 @@ export const MinimalistHero = ({
       {/* Footer esquerdo — Instagram */}
       {instagramHandle && (
         <a
+          className="mh-insta"
           href={`https://instagram.com/${instagramHandle.replace('@', '')}`}
           target="_blank" rel="noopener noreferrer"
           style={{
@@ -133,7 +147,7 @@ export const MinimalistHero = ({
       )}
 
       {/* Footer direito — localização */}
-      <div style={{ position: 'absolute', bottom: 28, right: 48, zIndex: 30, fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.5)', animation: 'mhFade .5s ease 1.3s both' }}>
+      <div className="mh-loc" style={{ position: 'absolute', bottom: 28, right: 48, zIndex: 30, fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.5)', animation: 'mhFade .5s ease 1.3s both' }}>
         {locationText}
       </div>
     </div>

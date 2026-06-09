@@ -78,7 +78,8 @@ export default function FluxoPage() {
       </div>
 
       {/* Tabela */}
-      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
+        <div className="min-w-[600px]">
         <div className="grid grid-cols-[120px_1fr_150px_80px_120px] px-6 py-3 border-b border-gray-100">
           {['Data','Descrição','Categoria','Recibo','Valor'].map(h => (
             <p key={h} className="text-xs font-semibold text-gray-400">{h}</p>
@@ -104,6 +105,7 @@ export default function FluxoPage() {
             </p>
           </div>
         ))}
+        </div>
       </div>
 
     </div>

@@ -4,9 +4,9 @@ export default function AntigosMCPage() {
   return (
     <>
       <PublicNav />
-      <main className="max-w-4xl mx-auto px-8 py-16 text-white">
+      <main className="max-w-4xl mx-auto px-5 md:px-8 py-12 md:py-16 text-white">
         <p className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: '#c0392b' }}>Galeria de Honra</p>
-        <h1 className="text-4xl font-black tracking-tight mb-8">Antigos Mestres Conselheiros</h1>
+        <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-6 md:mb-8">Antigos Mestres Conselheiros</h1>
         <p className="text-base leading-relaxed mb-10" style={{ color: 'rgba(255,255,255,0.6)' }}>
           Registro dos jovens que conduziram o Capítulo Nº 307 ao longo dos anos.
         </p>
