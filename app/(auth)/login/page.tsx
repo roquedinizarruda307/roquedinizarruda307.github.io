@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import { MinimalistHero } from '@/components/ui/minimalist-hero'
+import { asset } from '@/lib/asset'
 
 export default function LoginPage() {
   const [tab, setTab] = useState<'login' | 'signup'>('login')
@@ -111,7 +112,7 @@ export default function LoginPage() {
             <div style={{ position:'absolute', top:'45%', left:'50%', transform:'translate(-50%,-50%)', width:520, height:520, borderRadius:'50%', background:'radial-gradient(circle, rgba(200,30,30,.45) 0%, rgba(120,15,15,.2) 45%, transparent 70%)', animation:'bgPulse 2s ease-in-out infinite' }} />
             <div style={{ position:'absolute', top:'45%', left:'50%', transform:'translate(-50%,-50%)', width:300, height:300, borderRadius:'30%', border:'2px solid rgba(200,30,30,.35)', animation:'ringOut 1.6s ease-out infinite' }} />
             {/* Jacques */}
-            <img src="/jacques.png" alt="Jacques DeMolay"
+            <img src={asset("/jacques.png")} alt="Jacques DeMolay"
               style={{ position:'relative', height:'82vh', width:'auto', objectFit:'contain', objectPosition:'bottom', zIndex:2, animation:'splashJacques 1.1s cubic-bezier(.22,1,.36,1) forwards' }} />
             {/* Nome */}
             <div style={{ position:'absolute', bottom:'8%', zIndex:3, textAlign:'center', opacity:0, animation:'fadeUp .6s ease .5s forwards' }}>

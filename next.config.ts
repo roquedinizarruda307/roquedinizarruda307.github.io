@@ -1,12 +1,15 @@
 import type { NextConfig } from "next";
 
+// Em produção (GitHub Pages, subpasta /roquedinizarruda307) o workflow define
+// NEXT_PUBLIC_BASE_PATH. No localhost fica vazio (site na raiz).
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+
 const nextConfig: NextConfig = {
-  // Exportação estática para hospedar no GitHub Pages
   output: 'export',
-  // GitHub Pages não otimiza imagens via servidor
   images: { unoptimized: true },
-  // URLs com barra final funcionam melhor no Pages
   trailingSlash: true,
+  basePath: basePath || undefined,
+  assetPrefix: basePath || undefined,
 };
 
 export default nextConfig;

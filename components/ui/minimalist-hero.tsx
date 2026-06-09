@@ -3,6 +3,7 @@
 import React from 'react';
 import { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { asset } from '@/lib/asset';
 
 interface MinimalistHeroProps {
   logoText: string;
@@ -76,7 +77,7 @@ export const MinimalistHero = ({
         <div style={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           {/* Jacques */}
           <img
-            src={imageSrc} alt={imageAlt}
+            src={asset(imageSrc)} alt={imageAlt}
             style={{
               position: 'relative',
               zIndex: 2,
