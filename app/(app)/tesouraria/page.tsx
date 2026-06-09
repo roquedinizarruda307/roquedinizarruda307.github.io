@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Wallet, TrendingUp, TrendingDown, AlertCircle, Users } from 'lucide-react'
-import Image from 'next/image'
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -118,28 +117,6 @@ export default function Home() {
             <p className="text-xl font-black" style={{ color }}>{value}</p>
           </div>
         ))}
-      </div>
-
-      {/* Mapa mundial */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-black tracking-widest uppercase text-gray-800">Presença Mundial</p>
-            <p className="text-xs text-gray-400 mt-0.5">Países onde a Ordem DeMolay está presente</p>
-          </div>
-          <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ background: '#fef2f2', color: '#c0392b' }}>
-            +30 países
-          </span>
-        </div>
-        <div className="p-4">
-          <Image
-            src="/mapademolay.png"
-            alt="Mapa mundial da Ordem DeMolay"
-            width={1200}
-            height={650}
-            className="w-full h-auto rounded-xl"
-          />
-        </div>
       </div>
 
       {/* Bottom grid */}
