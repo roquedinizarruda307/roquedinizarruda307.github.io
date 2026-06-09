@@ -40,6 +40,13 @@ function TabMensalidades({ mes, ano, registrar }: { mes: number; ano: number; re
     ])
     const novoMapa: Record<string, { id?: string; status: StatusMens }> = {}
     for (const reg of r ?? []) novoMapa[reg.membro_id] = { id: reg.id, status: reg.status as StatusMens }
+
+    // Rede de segurança: remove entradas de mensalidades que não estão mais "pago"
+    const naoPagas = (r ?? []).filter(reg => reg.status !== 'pago').map(reg => reg.id)
+    if (naoPagas.length) {
+      await supabase.from('transacoes').delete().in('mensalidade_id', naoPagas)
+    }
+
     setMembros(m ?? [])
     setMapa(novoMapa)
     setLoading(false)
