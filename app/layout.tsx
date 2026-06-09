@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "DeMolay - Gestão do Capítulo",
-  description: "Sistema de gestão para capítulos da Ordem DeMolay",
+  title: "Roque Diniz Arruda 307",
+  description: "Capítulo Roque Diniz Arruda nº 307 — Ordem DeMolay",
 };
 
 export default function RootLayout({
