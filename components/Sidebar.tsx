@@ -65,7 +65,7 @@ export default function Sidebar() {
               <Link key={href} href={href} onClick={() => setOpen(false)}
                 className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-150"
                 style={active ? { background: '#1e2235' } : {}}>
-                <Icon size={16} style={{ color: active ? '#c0392b' : '#3d4460' }} />
+                <Icon size={16} style={{ color: active ? '#ffffff' : '#3d4460' }} />
                 <span className="text-xs font-bold tracking-widest uppercase"
                   style={{ color: active ? '#ffffff' : '#3d4460' }}>
                   {label}

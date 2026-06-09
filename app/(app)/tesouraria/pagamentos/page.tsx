@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
-import { Plus, FileSpreadsheet, X } from 'lucide-react'
+import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check } from 'lucide-react'
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 const ANO_ATUAL = new Date().getFullYear()
@@ -235,40 +235,92 @@ function TabAnuidades({ ano, registrar }: { ano: number; registrar: (fn: () => s
 }
 
 // ─── Tab: Eventos ─────────────────────────────────────────────────────────────
+type Participante = { id: string; evento_id: string; membro_id: string; qtd: number; pago: boolean; ingresso_retirado: boolean }
+
 function TabEventos({ mes, ano, registrar }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void }) {
   const [eventos, setEventos] = useState<any[]>([])
+  const [membros, setMembros] = useState<Membro[]>([])
+  const [parts, setParts] = useState<Participante[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ nome: '', data: `${ano}-${String(mes).padStart(2,'0')}-01`, valor: '', descricao: '' })
+  const [expandido, setExpandido] = useState<string | null>(null)
+  const [addSel, setAddSel] = useState<Record<string, string>>({})
+  const [form, setForm] = useState({ nome: '', data: `${ano}-${String(mes).padStart(2,'0')}-01`, valor: '', descricao: '', tipo: 'simples', qtd_ingressos: '1' })
 
   const fetchDados = useCallback(async () => {
     setLoading(true)
     const m = String(mes).padStart(2,'0')
-    const { data } = await supabase.from('pagamentos_eventos').select('*')
-      .gte('data', `${ano}-${m}-01`).lte('data', `${ano}-${m}-31`).order('data')
-    setEventos(data ?? [])
-    setLoading(false)
+    const [{ data: evs }, { data: ms }] = await Promise.all([
+      supabase.from('pagamentos_eventos').select('*').gte('data', `${ano}-${m}-01`).lte('data', `${ano}-${m}-31`).order('data'),
+      supabase.from('membros').select('*').order('nome'),
+    ])
+    const ids = (evs ?? []).map(e => e.id)
+    let ps: Participante[] = []
+    if (ids.length) {
+      const { data: p } = await supabase.from('evento_participantes').select('*').in('evento_id', ids)
+      ps = (p ?? []) as Participante[]
+    }
+    setEventos(evs ?? []); setMembros(ms ?? []); setParts(ps); setLoading(false)
   }, [mes, ano])
 
   useEffect(() => { fetchDados() }, [fetchDados])
 
-  const stStyle = (s: string) =>
-    s === 'pago'     ? { bg: '#f0fdf4', color: '#16a34a', label: 'Pago' } :
-    s === 'atrasado' ? { bg: '#fef2f2', color: '#dc2626', label: 'Atrasado' } :
-                       { bg: '#fefce8', color: '#a16207', label: 'Pendente' }
+  const valorDevido = (ev: any, p: Participante) => ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor
+  const partsDe = (evId: string) => parts.filter(p => p.evento_id === evId)
 
   useEffect(() => {
     registrar(() => {
-      const linhas: string[][] = [['Evento', 'Descrição', 'Valor', 'Status']]
-      for (const ev of eventos) linhas.push([ev.nome, ev.descricao ?? '', fmt(+ev.valor), stStyle(ev.status).label])
+      const linhas: string[][] = [['Evento', 'Membro', 'Ingressos', 'Valor', 'Pago', 'Ingresso retirado']]
+      for (const ev of eventos) for (const p of partsDe(ev.id)) {
+        const m = membros.find(x => x.id === p.membro_id)
+        linhas.push([ev.nome, m?.nome ?? '—', ev.tipo === 'ingresso' ? String(p.qtd) : '—',
+          fmt(valorDevido(ev, p)), p.pago ? 'Sim' : 'Não', ev.tipo === 'ingresso' ? (p.ingresso_retirado ? 'Sim' : 'Não') : '—'])
+      }
       return linhas
     })
-  }, [eventos, registrar])
+  }, [eventos, parts, membros, registrar])
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
-    await supabase.from('pagamentos_eventos').insert([{ ...form, valor: +form.valor, status: 'pendente' }])
-    setShowForm(false); setForm({ nome: '', data: `${ano}-${String(mes).padStart(2,'0')}-01`, valor: '', descricao: '' })
+    await supabase.from('pagamentos_eventos').insert([{
+      nome: form.nome, data: form.data, valor: +form.valor, descricao: form.descricao,
+      status: 'pendente', tipo: form.tipo, qtd_ingressos: +form.qtd_ingressos || 1,
+    }])
+    setShowForm(false)
+    setForm({ nome: '', data: `${ano}-${String(mes).padStart(2,'0')}-01`, valor: '', descricao: '', tipo: 'simples', qtd_ingressos: '1' })
+    fetchDados()
+  }
+
+  async function addParticipante(ev: any) {
+    const membroId = addSel[ev.id]
+    if (!membroId) return
+    await supabase.from('evento_participantes').insert([{
+      evento_id: ev.id, membro_id: membroId, qtd: ev.tipo === 'ingresso' ? (ev.qtd_ingressos || 1) : 1,
+    }])
+    setAddSel(s => ({ ...s, [ev.id]: '' }))
+    fetchDados()
+  }
+
+  async function togglePart(p: Participante, campo: 'pago' | 'ingresso_retirado') {
+    const novo = !p[campo]
+    setParts(prev => prev.map(x => x.id === p.id ? { ...x, [campo]: novo } : x))
+    await supabase.from('evento_participantes').update({ [campo]: novo }).eq('id', p.id)
+  }
+
+  async function setQtd(p: Participante, qtd: number) {
+    if (qtd < 1) return
+    setParts(prev => prev.map(x => x.id === p.id ? { ...x, qtd } : x))
+    await supabase.from('evento_participantes').update({ qtd }).eq('id', p.id)
+  }
+
+  async function removerPart(p: Participante) {
+    setParts(prev => prev.filter(x => x.id !== p.id))
+    await supabase.from('evento_participantes').delete().eq('id', p.id)
+  }
+
+  async function removerEvento(ev: any) {
+    if (!confirm(`Excluir o evento "${ev.nome}" e seus participantes?`)) return
+    await supabase.from('pagamentos_eventos').delete().eq('id', ev.id)
     fetchDados()
   }
 
@@ -292,7 +344,15 @@ function TabEventos({ mes, ano, registrar }: { mes: number; ano: number; registr
             <div className="grid grid-cols-2 gap-3">
               <input required placeholder="Nome do evento" value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} className={inp + ' col-span-2'} />
               <input required type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} className={inp} />
-              <input required type="number" step="0.01" placeholder="Valor R$" value={form.valor} onChange={e => setForm({...form, valor: e.target.value})} className={inp} />
+              {/* tipo */}
+              <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} className={inp}>
+                <option value="simples">Valor único</option>
+                <option value="ingresso">Venda de ingressos</option>
+              </select>
+              <input required type="number" step="0.01" placeholder={form.tipo === 'ingresso' ? 'Valor por ingresso' : 'Valor R$'} value={form.valor} onChange={e => setForm({...form, valor: e.target.value})} className={inp} />
+              {form.tipo === 'ingresso'
+                ? <input type="number" min="1" placeholder="Ingressos por membro" value={form.qtd_ingressos} onChange={e => setForm({...form, qtd_ingressos: e.target.value})} className={inp} />
+                : <div />}
               <input placeholder="Descrição" value={form.descricao} onChange={e => setForm({...form, descricao: e.target.value})} className={inp + ' col-span-2'} />
             </div>
             <div className="flex gap-2 mt-4">
@@ -309,26 +369,106 @@ function TabEventos({ mes, ano, registrar }: { mes: number; ano: number; registr
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-16 text-center text-sm text-gray-300">
           Nenhum evento em {MESES_C[mes-1]}/{ano}.
         </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {eventos.map((ev, i) => {
-            const st = stStyle(ev.status)
-            return (
-              <div key={ev.id}
-                className={`flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors ${i < eventos.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{ev.nome}</p>
-                  {ev.descricao && <p className="text-xs text-gray-400 mt-0.5">{ev.descricao}</p>}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-gray-700">{fmt(+ev.valor)}</span>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ background: st.bg, color: st.color }}>{st.label}</span>
+      ) : eventos.map(ev => {
+        const ps = partsDe(ev.id)
+        const totalDevido = ps.reduce((s, p) => s + valorDevido(ev, p), 0)
+        const totalPago   = ps.filter(p => p.pago).reduce((s, p) => s + valorDevido(ev, p), 0)
+        const pendente    = totalDevido - totalPago
+        const aberto = expandido === ev.id
+        const disponiveis = membros.filter(m => !ps.some(p => p.membro_id === m.id))
+        return (
+          <div key={ev.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* Cabeçalho do evento */}
+            <button onClick={() => setExpandido(aberto ? null : ev.id)}
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+              <div className="flex items-center gap-3 min-w-0">
+                {ev.tipo === 'ingresso' && <Ticket size={16} className="text-gray-400 flex-shrink-0" />}
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-800 truncate">{ev.nome}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {new Date(ev.data + 'T00:00:00').toLocaleDateString('pt-BR')}
+                    {ev.tipo === 'ingresso' ? ` · ${fmt(+ev.valor)}/ingresso` : ` · ${fmt(+ev.valor)}`}
+                    {` · ${ps.length} participante(s)`}
+                  </p>
                 </div>
               </div>
-            )
-          })}
-        </div>
-      )}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                {pendente > 0
+                  ? <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#fef2f2', color: '#dc2626' }}>{fmt(pendente)} a receber</span>
+                  : ps.length > 0 && <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#f0fdf4', color: '#16a34a' }}>Quitado</span>}
+                <ChevronDown size={16} className="text-gray-400 transition-transform" style={{ transform: aberto ? 'rotate(180deg)' : 'none' }} />
+              </div>
+            </button>
+
+            {/* Participantes */}
+            {aberto && (
+              <div className="border-t border-gray-50 px-4 sm:px-6 py-4 space-y-2">
+                {ps.length === 0 && <p className="text-sm text-gray-300 py-2 text-center">Nenhum participante ainda.</p>}
+
+                {ps.map(p => {
+                  const m = membros.find(x => x.id === p.membro_id)
+                  return (
+                    <div key={p.id} className="flex items-center justify-between gap-3 flex-wrap py-2 border-b border-gray-50 last:border-0">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs" style={{ background: '#f3f4f6', color: '#6b7280' }}>{inicial(m?.nome ?? '?')}</div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{m?.nome ?? '—'}</p>
+                          <p className="text-xs" style={{ color: p.pago ? '#16a34a' : '#dc2626' }}>
+                            {p.pago ? 'Pago' : `Deve ${fmt(valorDevido(ev, p))}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* qtd ingressos */}
+                        {ev.tipo === 'ingresso' && (
+                          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                            <button onClick={() => setQtd(p, p.qtd - 1)} className="px-2 py-1 text-gray-500 hover:bg-gray-50">−</button>
+                            <span className="px-2 text-xs font-bold text-gray-700 min-w-[42px] text-center">{p.qtd} ing.</span>
+                            <button onClick={() => setQtd(p, p.qtd + 1)} className="px-2 py-1 text-gray-500 hover:bg-gray-50">+</button>
+                          </div>
+                        )}
+                        {/* pago */}
+                        <button onClick={() => togglePart(p, 'pago')}
+                          className="text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg transition-colors"
+                          style={p.pago ? { background: '#f0fdf4', color: '#16a34a' } : { background: '#fef2f2', color: '#dc2626' }}>
+                          {p.pago ? 'Pago' : 'Não pago'}
+                        </button>
+                        {/* ingresso retirado */}
+                        {ev.tipo === 'ingresso' && (
+                          <button onClick={() => togglePart(p, 'ingresso_retirado')}
+                            className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg transition-colors"
+                            style={p.ingresso_retirado ? { background: '#eff6ff', color: '#1d4ed8' } : { background: '#f9fafb', color: '#9ca3af' }}>
+                            {p.ingresso_retirado && <Check size={12} />} {p.ingresso_retirado ? 'Retirado' : 'Não retirado'}
+                          </button>
+                        )}
+                        <button onClick={() => removerPart(p)} className="text-gray-300 hover:text-red-500 p-1"><X size={14} /></button>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* Adicionar participante */}
+                <div className="flex items-center gap-2 pt-3">
+                  <div className="relative flex-1">
+                    <select value={addSel[ev.id] ?? ''} onChange={e => setAddSel(s => ({ ...s, [ev.id]: e.target.value }))}
+                      className="appearance-none w-full border border-gray-200 rounded-lg pl-3.5 pr-8 py-2 text-sm bg-white cursor-pointer">
+                      <option value="">Adicionar membro…</option>
+                      {disponiveis.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                    </select>
+                    <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                  <button onClick={() => addParticipante(ev)} disabled={!addSel[ev.id]}
+                    className="flex items-center gap-1.5 text-white text-sm font-medium px-3.5 py-2 rounded-lg disabled:opacity-40" style={{ background: '#c0392b' }}>
+                    <Plus size={14} /> Adicionar
+                  </button>
+                  <button onClick={() => removerEvento(ev)} className="text-xs text-gray-400 hover:text-red-500 px-2 whitespace-nowrap">Excluir evento</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
