@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ChevronDown, Trash2 } from 'lucide-react'
+import { ChevronDown, Trash2, FileSpreadsheet } from 'lucide-react'
+import { exportarExcel } from '@/lib/excel'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
@@ -43,6 +44,22 @@ export default function FluxoPage() {
   const saidas   = rows.filter(r => r.tipo === 'saida').reduce((s, r) => s + +r.valor, 0)
   const saldo    = entradas - saidas
 
+  function exportar() {
+    const linhas: (string | number)[][] = [['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor']]
+    for (const r of rows) {
+      linhas.push([
+        new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR'),
+        r.descricao ?? '', r.categoria ?? '', r.tipo === 'entrada' ? 'Entrada' : 'Saída',
+        (r.tipo === 'entrada' ? 1 : -1) * +r.valor,
+      ])
+    }
+    linhas.push([])
+    linhas.push(['', '', '', 'Entradas', entradas])
+    linhas.push(['', '', '', 'Saídas', saidas])
+    linhas.push(['', '', '', 'Saldo', saldo])
+    exportarExcel(`fluxo_${MESES[mes-1]}_${ano}.xlsx`, linhas, 'Fluxo')
+  }
+
   return (
     <div className="p-7 max-w-6xl space-y-5">
 
@@ -64,6 +81,10 @@ export default function FluxoPage() {
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>
         </div>
+        <button onClick={exportar} disabled={rows.length === 0}
+          className="flex items-center gap-1.5 border border-gray-200 bg-white rounded-lg px-3.5 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40">
+          <FileSpreadsheet size={14} className="text-emerald-500" /> Exportar Excel
+        </button>
         <div className="flex-1" />
         <div className="text-right">
           <p className="text-xs text-gray-400 mb-0.5">Saldo do período</p>

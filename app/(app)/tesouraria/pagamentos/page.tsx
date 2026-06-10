@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check } from 'lucide-react'
+import { exportarExcel } from '@/lib/excel'
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 const ANO_ATUAL = new Date().getFullYear()
@@ -14,15 +15,6 @@ const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', curren
 
 function inicial(nome: string) {
   return (nome?.trim()?.[0] ?? '?').toUpperCase()
-}
-
-function baixarCSV(nome: string, linhas: string[][]) {
-  const csv = linhas.map(l => l.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n')
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = nome; a.click()
-  URL.revokeObjectURL(url)
 }
 
 // ─── Tab: Mensalidades ────────────────────────────────────────────────────────
@@ -773,8 +765,8 @@ export default function PagamentosPage() {
 
   function exportarRelatorio() {
     const linhas = gerarLinhas()
-    const nome = `${tab}_${mostraMeses ? mesLabel + '_' : ''}${anoSel}.csv`
-    baixarCSV(nome, linhas)
+    const nome = `${tab}_${mostraMeses ? mesLabel + '_' : ''}${anoSel}.xlsx`
+    exportarExcel(nome, linhas, tab)
   }
 
   return (
@@ -847,7 +839,7 @@ export default function PagamentosPage() {
       <div>
         <button onClick={exportarRelatorio}
           className="flex items-center gap-2 border border-gray-200 bg-white rounded-xl px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gray-600 hover:bg-gray-50 transition-colors shadow-sm">
-          <FileSpreadsheet size={15} className="text-emerald-500" /> Relatório
+          <FileSpreadsheet size={15} className="text-emerald-500" /> Exportar Excel
         </button>
       </div>
 

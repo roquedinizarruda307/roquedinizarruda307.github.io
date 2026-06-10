@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { ChevronDown, FileSpreadsheet, Plus, X, Pencil, Trash2 } from 'lucide-react'
+import { exportarExcel } from '@/lib/excel'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const CATS = ['Mensalidade','Anuidade','Evento','Doação','Material','Alimentação','Transporte','Outro']
@@ -84,6 +85,18 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
 
   const subtotal = rows.reduce((s, r) => s + +r.valor, 0)
 
+  function exportar() {
+    const linhas: (string | number)[][] = [['Data', 'Descrição', isE ? 'Origem' : 'Destino', 'Categoria', 'Valor']]
+    for (const r of rows) {
+      linhas.push([
+        new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR'),
+        r.descricao ?? '', r.origem_destino ?? '', r.categoria ?? '', +r.valor,
+      ])
+    }
+    linhas.push(['', '', '', 'TOTAL', subtotal])
+    exportarExcel(`${isE ? 'entradas' : 'saidas'}_${MESES[mes-1]}_${ano}.xlsx`, linhas, isE ? 'Entradas' : 'Saídas')
+  }
+
   return (
     <div className="space-y-4">
 
@@ -122,8 +135,9 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
           <p className="text-base font-bold" style={{ color: cor }}>{fmt(subtotal)}</p>
         </div>
 
-        <button className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3.5 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-          <FileSpreadsheet size={14} style={{ color: cor }} /> Exportar
+        <button onClick={exportar} disabled={rows.length === 0}
+          className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3.5 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40">
+          <FileSpreadsheet size={14} style={{ color: cor }} /> Exportar Excel
         </button>
 
         <button onClick={() => { if (showForm) { resetForm(); setShowForm(false) } else { resetForm(); setShowForm(true) } }}
