@@ -95,15 +95,30 @@ export default function MembrosPage() {
 
   async function fetchTudo() {
     setLoading(true)
-    const [{ data: m }, { data: mens }] = await Promise.all([
+    const [{ data: m }, { data: mens }, { data: anu }, { data: parts }, { data: peds }, { data: evs }] = await Promise.all([
       supabase.from('membros').select('*').order('nome'),
       supabase.from('mensalidades').select('membro_id, valor').eq('status', 'nao_pago'),
+      supabase.from('anuidades').select('membro_id, valor, status').neq('status', 'pago'),
+      supabase.from('evento_participantes').select('membro_id, qtd, pago, evento_id').eq('pago', false),
+      supabase.from('evento_pedidos').select('membro_id, valor, pago').eq('pago', false),
+      supabase.from('pagamentos_eventos').select('id, valor, tipo'),
     ])
     setMembros(m ?? [])
+
     const d: Record<string, number> = {}
-    for (const row of mens ?? []) {
-      d[row.membro_id] = (d[row.membro_id] ?? 0) + +row.valor
+    const add = (id: string | null, v: number) => { if (id) d[id] = (d[id] ?? 0) + v }
+
+    for (const row of mens ?? []) add(row.membro_id, +row.valor)
+    for (const row of anu ?? []) add(row.membro_id, +row.valor)
+    // participações em eventos (ingresso/simples)
+    const evMap = new Map((evs ?? []).map(e => [e.id, e]))
+    for (const p of parts ?? []) {
+      const ev = evMap.get(p.evento_id)
+      if (ev) add(p.membro_id, ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor)
     }
+    // pedidos de evento vinculados a membro
+    for (const pd of peds ?? []) add(pd.membro_id, +pd.valor)
+
     setDividas(d)
     setLoading(false)
   }

@@ -248,9 +248,9 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
 
 // ─── Corpo de evento tipo "lista de pedidos" (ex.: camisetas) ─────────────────
 type ItemEv = { id: string; evento_id: string; nome: string; valor: number }
-type Pedido = { id: string; evento_id: string; nome: string; item_id: string | null; item_nome: string | null; qtd: number; valor: number; pago: boolean; retirado: boolean; transacao_id: string | null }
+type Pedido = { id: string; evento_id: string; nome: string; membro_id: string | null; item_id: string | null; item_nome: string | null; qtd: number; valor: number; pago: boolean; retirado: boolean; transacao_id: string | null }
 
-function ListaPedidos({ ev, onMudou, onExcluir }: { ev: any; onMudou: () => void; onExcluir: () => void }) {
+function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: Membro[]; onMudou: () => void; onExcluir: () => void }) {
   const [itens, setItens] = useState<ItemEv[]>([])
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loading, setLoading] = useState(true)
@@ -259,6 +259,7 @@ function ListaPedidos({ ev, onMudou, onExcluir }: { ev: any; onMudou: () => void
   const [itemValor, setItemValor] = useState('')
   // form de pedido
   const [pNome, setPNome] = useState('')
+  const [pMembro, setPMembro] = useState('')   // '' = comprador externo (público)
   const [pItem, setPItem] = useState('')
   const [pQtd, setPQtd] = useState('1')
   const [pValor, setPValor] = useState('')
@@ -286,14 +287,17 @@ function ListaPedidos({ ev, onMudou, onExcluir }: { ev: any; onMudou: () => void
 
   async function addPedido(e: React.FormEvent) {
     e.preventDefault()
-    if (!pNome.trim()) return
+    const membro = membros.find(m => m.id === pMembro)
+    const nomeFinal = membro ? membro.nome : pNome.trim()
+    if (!nomeFinal) return
     const item = itens.find(i => i.id === pItem)
     const qtd = +pQtd || 1
     const valor = pValor !== '' ? +pValor : (item ? item.valor * qtd : 0)
     await supabase.from('evento_pedidos').insert([{
-      evento_id: ev.id, nome: pNome, item_id: item?.id ?? null, item_nome: item?.nome ?? null, qtd, valor,
+      evento_id: ev.id, nome: nomeFinal, membro_id: membro?.id ?? null,
+      item_id: item?.id ?? null, item_nome: item?.nome ?? null, qtd, valor,
     }])
-    setPNome(''); setPItem(''); setPQtd('1'); setPValor(''); fetchTudo()
+    setPNome(''); setPMembro(''); setPItem(''); setPQtd('1'); setPValor(''); fetchTudo(); onMudou()
   }
 
   async function togglePago(p: Pedido) {
@@ -371,7 +375,10 @@ function ListaPedidos({ ev, onMudou, onExcluir }: { ev: any; onMudou: () => void
           {pedidos.map(p => (
             <div key={p.id} className="flex items-center justify-between gap-3 flex-wrap py-2 border-b border-gray-50 last:border-0">
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-800 truncate">{p.nome}</p>
+                <p className="text-sm font-semibold text-gray-800 truncate flex items-center gap-1.5">
+                  {p.nome}
+                  {p.membro_id && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#eef2ff', color: '#4338ca' }}>MEMBRO</span>}
+                </p>
                 <p className="text-xs" style={{ color: p.pago ? '#16a34a' : '#dc2626' }}>
                   {p.item_nome ? `${p.qtd}x ${p.item_nome} · ` : ''}{p.pago ? `Pago ${fmt(+p.valor)}` : `Deve ${fmt(+p.valor)}`}
                 </p>
@@ -394,8 +401,15 @@ function ListaPedidos({ ev, onMudou, onExcluir }: { ev: any; onMudou: () => void
         </div>
 
         {/* Adicionar pedido */}
-        <form onSubmit={addPedido} className="grid grid-cols-1 sm:grid-cols-[1fr_140px_70px_110px_auto] gap-2 items-center">
-          <input value={pNome} onChange={e => setPNome(e.target.value)} placeholder="Nome do comprador" className={inp} />
+        <form onSubmit={addPedido} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_130px_60px_100px_auto] gap-2 items-center">
+          {/* Membro (vincula dívida) */}
+          <select value={pMembro} onChange={e => setPMembro(e.target.value)} className={inp + ' appearance-none'}>
+            <option value="">Comprador externo</option>
+            {membros.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+          </select>
+          {/* Nome livre (usado se não for membro) */}
+          <input value={pNome} onChange={e => setPNome(e.target.value)} placeholder="Nome (se externo)" disabled={!!pMembro}
+            className={inp + (pMembro ? ' opacity-50' : '')} />
           <select value={pItem} onChange={e => { setPItem(e.target.value); setPValor('') }} className={inp + ' appearance-none'}>
             <option value="">Item (opcional)</option>
             {itens.map(it => <option key={it.id} value={it.id}>{it.nome}</option>)}
@@ -607,7 +621,7 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
             </button>
 
             {/* Corpo: lista de pedidos OU participantes */}
-            {aberto && ev.tipo === 'lista' && <ListaPedidos ev={ev} onMudou={onMudou} onExcluir={() => removerEvento(ev)} />}
+            {aberto && ev.tipo === 'lista' && <ListaPedidos ev={ev} membros={membros} onMudou={onMudou} onExcluir={() => removerEvento(ev)} />}
             {aberto && ev.tipo !== 'lista' && (
               <div className="border-t border-gray-50 px-4 sm:px-6 py-4 space-y-2">
                 {ps.length === 0 && <p className="text-sm text-gray-300 py-2 text-center">Nenhum participante ainda.</p>}
