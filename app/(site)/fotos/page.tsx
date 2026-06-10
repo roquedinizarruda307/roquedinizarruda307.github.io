@@ -1,7 +1,7 @@
 import PublicNav from '@/components/PublicNav'
 import { asset } from '@/lib/asset'
 
-const TOTAL = 75
+const TOTAL = 171
 
 export default function FotosPage() {
   const fotos = Array.from({ length: TOTAL }, (_, i) => `/fotos/foto-${i + 1}.jpg`)
@@ -17,9 +17,9 @@ export default function FotosPage() {
         </p>
 
         {/* Masonry: ~8 fotos por coluna (6 colunas no desktop) */}
-        <div className="[column-count:2] sm:[column-count:3] lg:[column-count:6] gap-3">
+        <div className="[column-count:3] sm:[column-count:4] lg:[column-count:6] gap-2 sm:gap-3">
           {fotos.map((src, i) => (
-            <div key={i} className="mb-3 break-inside-avoid overflow-hidden rounded-xl"
+            <div key={i} className="mb-2 sm:mb-3 break-inside-avoid overflow-hidden rounded-lg sm:rounded-xl"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
               <img src={asset(src)} alt={`Foto ${i + 1}`} loading="lazy" className="w-full h-auto block" />
             </div>
