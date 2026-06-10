@@ -26,7 +26,7 @@ function baixarCSV(nome: string, linhas: string[][]) {
 }
 
 // ─── Tab: Mensalidades ────────────────────────────────────────────────────────
-function TabMensalidades({ mes, ano, registrar }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void }) {
+function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void; onMudou: () => void }) {
   const [membros, setMembros] = useState<Membro[]>([])
   const [mapa, setMapa] = useState<Record<string, { id?: string; status: StatusMens }>>({})
   const [loading, setLoading] = useState(true)
@@ -111,6 +111,7 @@ function TabMensalidades({ mes, ano, registrar }: { mes: number; ano: number; re
       if (prox === 'pago') await gerarReceita(id, membro)
       else await removerReceita(id)
     }
+    onMudou()
     setSaving(null)
   }
 
@@ -160,7 +161,7 @@ function TabMensalidades({ mes, ano, registrar }: { mes: number; ano: number; re
 }
 
 // ─── Tab: Anuidades ───────────────────────────────────────────────────────────
-function TabAnuidades({ ano, registrar }: { ano: number; registrar: (fn: () => string[][]) => void }) {
+function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn: () => string[][]) => void; onMudou: () => void }) {
   const [membros, setMembros] = useState<Membro[]>([])
   const [mapa, setMapa] = useState<Record<string, { id?: string; status: string }>>({})
   const [loading, setLoading] = useState(true)
@@ -210,6 +211,7 @@ function TabAnuidades({ ano, registrar }: { ano: number; registrar: (fn: () => s
       const { data } = await supabase.from('anuidades').insert([{ membro_id: membroId, ano, valor: 120, status: prox }]).select('id').single()
       if (data) setMapa(prev => ({ ...prev, [membroId]: { id: data.id, status: prox } }))
     }
+    onMudou()
     setSaving(null)
   }
 
@@ -244,7 +246,7 @@ function TabAnuidades({ ano, registrar }: { ano: number; registrar: (fn: () => s
 // ─── Tab: Eventos ─────────────────────────────────────────────────────────────
 type Participante = { id: string; evento_id: string; membro_id: string; qtd: number; pago: boolean; ingresso_retirado: boolean }
 
-function TabEventos({ mes, ano, registrar }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void }) {
+function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void; onMudou: () => void }) {
   const [eventos, setEventos] = useState<any[]>([])
   const [membros, setMembros] = useState<Membro[]>([])
   const [parts, setParts] = useState<Participante[]>([])
@@ -305,13 +307,14 @@ function TabEventos({ mes, ano, registrar }: { mes: number; ano: number; registr
       evento_id: ev.id, membro_id: membroId, qtd: ev.tipo === 'ingresso' ? (ev.qtd_ingressos || 1) : 1,
     }])
     setAddSel(s => ({ ...s, [ev.id]: '' }))
-    fetchDados()
+    fetchDados(); onMudou()
   }
 
   async function togglePart(p: Participante, campo: 'pago' | 'ingresso_retirado') {
     const novo = !p[campo]
     setParts(prev => prev.map(x => x.id === p.id ? { ...x, [campo]: novo } : x))
     await supabase.from('evento_participantes').update({ [campo]: novo }).eq('id', p.id)
+    if (campo === 'pago') onMudou()
   }
 
   async function setQtd(p: Participante, qtd: number) {
@@ -323,6 +326,7 @@ function TabEventos({ mes, ano, registrar }: { mes: number; ano: number; registr
   async function removerPart(p: Participante) {
     setParts(prev => prev.filter(x => x.id !== p.id))
     await supabase.from('evento_participantes').delete().eq('id', p.id)
+    onMudou()
   }
 
   async function removerEvento(ev: any) {
@@ -496,14 +500,36 @@ export default function PagamentosPage() {
 
   async function fetchResumo() {
     const m = String(mesSel).padStart(2,'0')
-    const [{ data: mens }, { data: anu }, { data: ev }] = await Promise.all([
-      supabase.from('mensalidades').select('valor, status').eq('mes', mesSel).eq('ano', anoSel),
-      supabase.from('anuidades').select('valor, status').eq('ano', anoSel),
-      supabase.from('pagamentos_eventos').select('valor, status').gte('data', `${anoSel}-${m}-01`).lte('data', `${anoSel}-${m}-31`),
+    const [{ data: membros }, { data: mens }, { data: anu }, { data: evs }] = await Promise.all([
+      supabase.from('membros').select('id'),
+      supabase.from('mensalidades').select('membro_id, status').eq('mes', mesSel).eq('ano', anoSel),
+      supabase.from('anuidades').select('membro_id, valor, status').eq('ano', anoSel),
+      supabase.from('pagamentos_eventos').select('id, valor, tipo').gte('data', `${anoSel}-${m}-01`).lte('data', `${anoSel}-${m}-31`),
     ])
-    const totalMens = (mens ?? []).filter(r => r.status === 'nao_pago').reduce((s, r) => s + +r.valor, 0)
-    const totalAnu  = (anu  ?? []).filter(r => r.status !== 'pago').reduce((s, r) => s + +r.valor, 0)
-    const totalEv   = (ev   ?? []).filter(r => r.status !== 'pago').reduce((s, r) => s + +r.valor, 0)
+
+    const totalMembros = (membros ?? []).length
+
+    // Mensalidades: todo membro que NÃO está pago nem isento conta como pendência (R$20)
+    const pagos   = new Set((mens ?? []).filter(r => r.status === 'pago').map(r => r.membro_id))
+    const isentos = new Set((mens ?? []).filter(r => r.status === 'isento').map(r => r.membro_id))
+    const naoPagos = Math.max(0, totalMembros - pagos.size - isentos.size)
+    const totalMens = naoPagos * 20
+
+    // Anuidades: pendentes (não pagas)
+    const totalAnu = (anu ?? []).filter(r => r.status !== 'pago').reduce((s, r) => s + +r.valor, 0)
+
+    // Eventos: soma do que falta receber dos participantes (não pagos)
+    let totalEv = 0
+    const evIds = (evs ?? []).map(e => e.id)
+    if (evIds.length) {
+      const { data: parts } = await supabase.from('evento_participantes').select('*').in('evento_id', evIds)
+      for (const p of parts ?? []) {
+        if (p.pago) continue
+        const ev = (evs ?? []).find(e => e.id === p.evento_id)
+        if (ev) totalEv += ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor
+      }
+    }
+
     setResumo({ pendente: totalMens + totalAnu + totalEv, anuidade: totalAnu, mensalidades: totalMens, eventos: totalEv })
   }
 
@@ -603,9 +629,9 @@ export default function PagamentosPage() {
       </div>
 
       {/* Conteúdo */}
-      {tab === 'mensalidades' && <TabMensalidades mes={mesSel} ano={anoSel} registrar={registrar} />}
-      {tab === 'anuidades'    && <TabAnuidades ano={anoSel} registrar={registrar} />}
-      {tab === 'eventos'      && <TabEventos mes={mesSel} ano={anoSel} registrar={registrar} />}
+      {tab === 'mensalidades' && <TabMensalidades mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumo} />}
+      {tab === 'anuidades'    && <TabAnuidades ano={anoSel} registrar={registrar} onMudou={fetchResumo} />}
+      {tab === 'eventos'      && <TabEventos mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumo} />}
     </div>
   )
 }
