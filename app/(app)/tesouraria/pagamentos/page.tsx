@@ -435,10 +435,18 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
   const fetchDados = useCallback(async () => {
     setLoading(true)
     const m = String(mes).padStart(2,'0')
-    const [{ data: evs }, { data: ms }] = await Promise.all([
+    const [{ data: evsMes }, { data: evsLista }, { data: ms }] = await Promise.all([
+      // eventos do mês (simples/ingresso) + listas do mês
       supabase.from('pagamentos_eventos').select('*').gte('data', `${ano}-${m}-01`).lte('data', `${ano}-${m}-31`).order('data'),
+      // listas de pedidos aparecem sempre (não são de um mês específico)
+      supabase.from('pagamentos_eventos').select('*').eq('tipo', 'lista').order('created_at', { ascending: false }),
       supabase.from('membros').select('*').order('nome'),
     ])
+    // junta sem duplicar
+    const mapaEv = new Map<string, any>()
+    for (const e of evsMes ?? []) mapaEv.set(e.id, e)
+    for (const e of evsLista ?? []) mapaEv.set(e.id, e)
+    const evs = [...mapaEv.values()]
     const ids = (evs ?? []).map(e => e.id)
     let ps: Participante[] = []
     if (ids.length) {
