@@ -43,14 +43,21 @@ export const MinimalistHero = ({
         @keyframes mhFade     { from{opacity:0} to{opacity:1} }
 
         @media (max-width: 768px) {
-          .mh-nav   { top: 18px !important; right: 16px !important; gap: 16px !important; }
-          .mh-nav a { font-size: 11px !important; }
+          /* botões no topo, centralizados */
+          .mh-nav   { top: 16px !important; left: 0 !important; right: 0 !important; justify-content: center !important;
+                      gap: 22px !important; flex-wrap: wrap !important; padding: 0 12px !important; }
+          .mh-nav a { font-size: 12px !important; }
+          /* Jacques fica como está (não mexer) */
           .mh-imgwrap { padding-right: 0 !important; align-items: center !important; }
           .mh-img   { height: 52vh !important; }
-          .mh-title { right: 0 !important; left: 0 !important; top: auto !important; bottom: 8% !important;
-                      transform: none !important; text-align: center !important; padding: 0 16px !important; }
-          .mh-title h1 { font-size: clamp(2.2rem, 13vw, 4rem) !important; }
-          .mh-insta { top: 18px !important; left: 16px !important; font-size: 10px !important; }
+          /* texto centralizado no meio da tela, com sombra para legibilidade */
+          .mh-title { right: 0 !important; left: 0 !important; top: 50% !important; bottom: auto !important;
+                      transform: translateY(-50%) !important; text-align: center !important; padding: 0 16px !important; }
+          .mh-title h1 { font-size: clamp(2.2rem, 12vw, 4rem) !important; text-shadow: 0 2px 24px rgba(0,0,0,0.65) !important; }
+          /* Instagram logo abaixo do texto (centralizado) */
+          .mh-insta { top: 50% !important; left: 0 !important; right: 0 !important; bottom: auto !important;
+                      justify-content: center !important; transform: translateY(115px) !important; font-size: 11px !important;
+                      text-shadow: 0 2px 12px rgba(0,0,0,0.6) !important; }
           .mh-loc   { bottom: 16px !important; right: 0 !important; left: 0 !important; text-align: center !important; }
         }
       `}</style>
