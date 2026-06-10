@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check } from 'lucide-react'
 
@@ -93,9 +93,12 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
     if (mapa[membroId]?.status === prox) return
     const membro = membros.find(m => m.id === membroId)!
     let id = mapa[membroId]?.id
-    setSaving(membroId)
-    setMapa(prev => ({ ...prev, [membroId]: { ...prev[membroId], status: prox } }))
 
+    // Atualiza a UI na hora (otimista)
+    setMapa(prev => ({ ...prev, [membroId]: { ...prev[membroId], status: prox } }))
+    setSaving(membroId)
+
+    // Salva a mensalidade (escrita crítica)
     if (id) {
       await supabase.from('mensalidades').update({ status: prox, data_pagamento: prox === 'pago' ? new Date().toISOString() : null }).eq('id', id)
     } else {
@@ -105,14 +108,14 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
       }]).select('id').single()
       if (data) { id = data.id; setMapa(prev => ({ ...prev, [membroId]: { id: data.id, status: prox } })) }
     }
+    setSaving(null)   // libera o botão já — o resto roda em segundo plano
 
-    // Caixa: entra quando paga, sai quando desmarca
+    // Caixa + resumo em segundo plano (não trava a interface)
     if (id) {
-      if (prox === 'pago') await gerarReceita(id, membro)
-      else await removerReceita(id)
+      if (prox === 'pago') gerarReceita(id, membro)
+      else removerReceita(id)
     }
     onMudou()
-    setSaving(null)
   }
 
   if (loading) return <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
@@ -496,6 +499,13 @@ export default function PagamentosPage() {
   const [gerarLinhas, setGerarLinhas] = useState<() => string[][]>(() => () => [])
   const registrar = useCallback((fn: () => string[][]) => setGerarLinhas(() => fn), [])
 
+  // recálculo do resumo com debounce — coalesce cliques rápidos (evita travar)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fetchResumoDebounced = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => { fetchResumo() }, 500)
+  }, [mesSel, anoSel])
+
   useEffect(() => { fetchResumo() }, [mesSel, anoSel])
 
   async function fetchResumo() {
@@ -629,9 +639,9 @@ export default function PagamentosPage() {
       </div>
 
       {/* Conteúdo */}
-      {tab === 'mensalidades' && <TabMensalidades mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumo} />}
-      {tab === 'anuidades'    && <TabAnuidades ano={anoSel} registrar={registrar} onMudou={fetchResumo} />}
-      {tab === 'eventos'      && <TabEventos mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumo} />}
+      {tab === 'mensalidades' && <TabMensalidades mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
+      {tab === 'anuidades'    && <TabAnuidades ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
+      {tab === 'eventos'      && <TabEventos mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
     </div>
   )
 }
