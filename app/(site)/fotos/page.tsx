@@ -1,7 +1,7 @@
 import PublicNav from '@/components/PublicNav'
 import { asset } from '@/lib/asset'
 
-const TOTAL = 50
+const TOTAL = 75
 
 export default function FotosPage() {
   const fotos = Array.from({ length: TOTAL }, (_, i) => `/fotos/foto-${i + 1}.jpg`)
