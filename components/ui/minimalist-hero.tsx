@@ -52,14 +52,14 @@ export const MinimalistHero = ({
           /* Jacques fica como está (não mexer) */
           .mh-imgwrap { padding-right: 0 !important; align-items: center !important; }
           .mh-img   { height: 52vh !important; }
-          /* texto maior, posicionado mais abaixo (sobre o corpo, não o rosto) */
-          .mh-title { right: 0 !important; left: 0 !important; top: 62% !important; bottom: auto !important;
+          /* texto maior, posicionado mais acima */
+          .mh-title { right: 0 !important; left: 0 !important; top: 42% !important; bottom: auto !important;
                       transform: translateY(-50%) !important; text-align: center !important; padding: 0 16px !important; }
           .mh-title h1 { font-size: clamp(3rem, 16vw, 5.2rem) !important; line-height: 0.93 !important;
                          letter-spacing: -0.04em !important; font-weight: 900 !important;
                          text-shadow: 0 4px 30px rgba(0,0,0,0.9), 0 1px 4px rgba(0,0,0,0.75) !important; }
           /* Instagram colado logo abaixo do texto */
-          .mh-insta { top: 62% !important; left: 0 !important; right: 0 !important; bottom: auto !important;
+          .mh-insta { top: 42% !important; left: 0 !important; right: 0 !important; bottom: auto !important;
                       justify-content: center !important; transform: translateY(88px) !important; font-size: 12px !important;
                       opacity: 0.9 !important; text-shadow: 0 2px 10px rgba(0,0,0,0.8) !important; }
           .mh-loc   { bottom: 16px !important; right: 0 !important; left: 0 !important; text-align: center !important; }
