@@ -16,6 +16,9 @@ const AGENDA: Evento[] = [
   { dia: '22',        mes: 'NOV', titulo: 'Dia em Memória a Frank Sherman Land' },
   { dia: '22',        mes: 'NOV', titulo: 'Entretenimento 05' },
   { dia: '29',        mes: 'NOV', titulo: 'Dia do Meu Governo' },
+  { dia: '06',        mes: 'DEZ', titulo: 'Dia de Conforto', obs: 'Visita ao Lar de Idosos' },
+  { dia: '13',        mes: 'DEZ', titulo: 'Festival de Sorvete' },
+  { dia: '20',        mes: 'DEZ', titulo: 'Filantropia 06', obs: 'Doação de Alimentos' },
 ]
 
 export default function EventosPage() {
