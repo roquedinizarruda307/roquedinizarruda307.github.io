@@ -43,23 +43,25 @@ export const MinimalistHero = ({
         @keyframes mhFade     { from{opacity:0} to{opacity:1} }
 
         @media (max-width: 768px) {
-          /* botões no topo, centralizados */
-          .mh-nav   { top: 16px !important; left: 0 !important; right: 0 !important; justify-content: center !important;
-                      gap: 22px !important; flex-wrap: wrap !important; padding: 0 12px !important; }
-          .mh-nav a { font-size: 12px !important; }
+          /* botões no topo, centralizados e bem visíveis */
+          .mh-nav   { top: 14px !important; left: 0 !important; right: 0 !important; justify-content: center !important;
+                      gap: 10px !important; flex-wrap: wrap !important; padding: 0 12px !important; }
+          .mh-nav a { font-size: 12px !important; color: #fff !important; font-weight: 700 !important;
+                      background: rgba(255,255,255,0.12) !important; border: 1px solid rgba(255,255,255,0.25) !important;
+                      padding: 7px 16px !important; border-radius: 999px !important; backdrop-filter: blur(6px) !important; }
           /* Jacques fica como está (não mexer) */
           .mh-imgwrap { padding-right: 0 !important; align-items: center !important; }
           .mh-img   { height: 52vh !important; }
-          /* texto centralizado no meio da tela */
-          .mh-title { right: 0 !important; left: 0 !important; top: 50% !important; bottom: auto !important;
-                      transform: translateY(-54%) !important; text-align: center !important; padding: 0 20px !important; }
-          .mh-title h1 { font-size: clamp(2.6rem, 14vw, 4.5rem) !important; line-height: 0.95 !important;
+          /* texto maior, posicionado mais abaixo (sobre o corpo, não o rosto) */
+          .mh-title { right: 0 !important; left: 0 !important; top: 62% !important; bottom: auto !important;
+                      transform: translateY(-50%) !important; text-align: center !important; padding: 0 16px !important; }
+          .mh-title h1 { font-size: clamp(3rem, 16vw, 5.2rem) !important; line-height: 0.93 !important;
                          letter-spacing: -0.04em !important; font-weight: 900 !important;
-                         text-shadow: 0 4px 30px rgba(0,0,0,0.85), 0 1px 4px rgba(0,0,0,0.7) !important; }
+                         text-shadow: 0 4px 30px rgba(0,0,0,0.9), 0 1px 4px rgba(0,0,0,0.75) !important; }
           /* Instagram colado logo abaixo do texto */
-          .mh-insta { top: 50% !important; left: 0 !important; right: 0 !important; bottom: auto !important;
-                      justify-content: center !important; transform: translateY(72px) !important; font-size: 12px !important;
-                      opacity: 0.85 !important; text-shadow: 0 2px 10px rgba(0,0,0,0.8) !important; }
+          .mh-insta { top: 62% !important; left: 0 !important; right: 0 !important; bottom: auto !important;
+                      justify-content: center !important; transform: translateY(88px) !important; font-size: 12px !important;
+                      opacity: 0.9 !important; text-shadow: 0 2px 10px rgba(0,0,0,0.8) !important; }
           .mh-loc   { bottom: 16px !important; right: 0 !important; left: 0 !important; text-align: center !important; }
         }
       `}</style>
