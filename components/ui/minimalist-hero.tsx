@@ -9,6 +9,7 @@ interface MinimalistHeroProps {
   logoText: string;
   navLinks: { label: string; href: string; onClick?: () => void }[];
   mainText: string;
+  mainTitle?: string;
   readMoreLink: string;
   imageSrc: string;
   imageAlt: string;
@@ -28,7 +29,7 @@ const InstagramSVG = () => (
 )
 
 export const MinimalistHero = ({
-  logoText, navLinks, mainText, readMoreLink,
+  logoText, navLinks, mainText, mainTitle, readMoreLink,
   imageSrc, imageAlt, overlayText, socialLinks, locationText, instagramHandle, className,
 }: MinimalistHeroProps) => {
   return (
@@ -63,8 +64,17 @@ export const MinimalistHero = ({
                       justify-content: center !important; transform: translateY(88px) !important; font-size: 12px !important;
                       opacity: 0.9 !important; text-shadow: 0 2px 10px rgba(0,0,0,0.8) !important; }
           .mh-loc   { bottom: 16px !important; right: 0 !important; left: 0 !important; text-align: center !important; }
+          .mh-side  { display: none !important; }
         }
       `}</style>
+
+      {/* Texto lateral (bio) — só renderiza quando mainText é passado */}
+      {mainText && (
+        <div className="mh-side" style={{ position: 'absolute', left: 48, top: '50%', transform: 'translateY(-50%)', zIndex: 30, maxWidth: 300, animation: 'mhFade .7s ease .8s both' }}>
+          {mainTitle && <p style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 8, letterSpacing: '-0.01em' }}>{mainTitle}</p>}
+          <p style={{ fontSize: 13, lineHeight: 1.75, color: 'rgba(255,255,255,0.6)' }}>{mainText}</p>
+        </div>
+      )}
 
       {/* Nav — topo direito */}
       <nav className="mh-nav" style={{ position: 'absolute', top: 32, right: 48, zIndex: 30, display: 'flex', gap: 40, animation: 'mhFadeDown .5s ease both' }}>

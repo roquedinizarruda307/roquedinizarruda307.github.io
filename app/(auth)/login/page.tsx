@@ -86,7 +86,7 @@ export default function LoginPage() {
         <div className="orb" style={{ width:500, height:400, bottom:-100, left:'10%', background:'radial-gradient(circle,rgba(150,20,20,.2) 0%,transparent 70%)' }} />
         <div style={{ position:'absolute', width:'200%', height:2, background:'linear-gradient(90deg,transparent 0%,rgba(200,30,30,.18) 30%,rgba(220,100,100,.35) 50%,rgba(200,30,30,.18) 70%,transparent 100%)', top:'52%', left:'-50%', transform:'rotate(-8deg)' }} />
 
-        {/* ── HERO (Jacques DeMolay) — idêntico ao dashboard ── */}
+        {/* ── HERO (Alberto Mansur) — tela de login ── */}
         {phase === 'hero' && (
           <div style={{ position:'absolute', inset:0, zIndex:5 }}>
             <MinimalistHero
@@ -95,10 +95,11 @@ export default function LoginPage() {
                 { label: 'Login',   href: '#', onClick: startFlow },
                 { label: 'Contato', href: 'https://instagram.com/roquedinizarruda' },
               ]}
-              mainText=""
+              mainTitle="Alberto Mansur"
+              mainText="Responsável por trazer a Ordem DeMolay ao Brasil, fundando o primeiro capítulo em 1980, em Resende (RJ). Seu legado permitiu que milhares de jovens brasileiros conhecessem os valores da fraternidade, da cidadania e da liderança."
               readMoreLink="#"
-              imageSrc="/jacques.png"
-              imageAlt="Jacques DeMolay"
+              imageSrc="/alberto-mansur.png"
+              imageAlt="Alberto Mansur"
               overlayText={{ part1: 'Roque', part2: 'Diniz', part3: 'Arruda' }}
               instagramHandle="@roquedinizarruda"
               socialLinks={[]}
