@@ -34,7 +34,7 @@ export const MinimalistHero = ({
 }: MinimalistHeroProps) => {
   return (
     <div
-      className={cn('relative overflow-hidden', className)}
+      className={cn('relative overflow-hidden', mainText ? 'mh-has-bio' : '', className)}
       style={{ background: '#0a0a0a', color: '#ffffff', fontFamily: 'sans-serif', width: '100%', height: '100vh' }}
     >
       <style>{`
@@ -65,6 +65,18 @@ export const MinimalistHero = ({
                       opacity: 0.9 !important; text-shadow: 0 2px 10px rgba(0,0,0,0.8) !important; }
           .mh-loc   { bottom: 16px !important; right: 0 !important; left: 0 !important; text-align: center !important; }
           .mh-side  { display: none !important; }
+
+          /* Variante com bio (tela do Alberto): esconde título/instagram, mostra a história embaixo */
+          .mh-has-bio .mh-title { display: none !important; }
+          .mh-has-bio .mh-insta { display: none !important; }
+          .mh-has-bio .mh-loc   { display: none !important; }
+          .mh-has-bio .mh-img   { height: 50vh !important; }
+          .mh-has-bio .mh-side  { display: block !important; left: 0 !important; right: 0 !important;
+                                  top: auto !important; bottom: 5% !important; transform: none !important;
+                                  max-width: none !important; padding: 0 22px !important; text-align: center !important; }
+          .mh-has-bio .mh-side p:first-child { font-size: 20px !important; }
+          .mh-has-bio .mh-side p { font-size: 14px !important; color: rgba(255,255,255,0.75) !important;
+                                   text-shadow: 0 2px 12px rgba(0,0,0,0.9) !important; }
         }
       `}</style>
 
