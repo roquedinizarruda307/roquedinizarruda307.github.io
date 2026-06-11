@@ -6,6 +6,7 @@ import { Home, TrendingUp, TrendingDown, Users, HandCoins, Settings, Menu, X, Lo
 import Image from 'next/image'
 import { useState } from 'react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
+import { usePapel } from '@/components/PapelContext'
 
 const navItems = [
   { href: '/tesouraria',            label: 'Início',   icon: Home },
@@ -23,6 +24,10 @@ export default function Sidebar() {
   const [open, setOpen] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+  const { papel } = usePapel()
+
+  // Escrivão vê apenas a aba do escrivão
+  const itens = papel === 'escrivao' ? navItems.filter(i => i.href === '/tesouraria/escrivao') : navItems
 
   async function handleLogout() {
     if (isSupabaseConfigured()) await supabase.auth.signOut()
@@ -60,7 +65,7 @@ export default function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 px-3 space-y-0.5">
-          {navItems.map(({ href, label, icon: Icon }) => {
+          {itens.map(({ href, label, icon: Icon }) => {
             const active = href === '/tesouraria' ? pathname === '/tesouraria' : pathname.startsWith(href)
             return (
               <Link key={href} href={href} onClick={() => setOpen(false)}

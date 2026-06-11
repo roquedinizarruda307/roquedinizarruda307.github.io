@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Wallet, Check } from 'lucide-react'
+import { Wallet, Check, NotebookPen, Trash2 } from 'lucide-react'
+import { usePapel } from '@/components/PapelContext'
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+type Perfil = { email: string; papel: string }
+
 export default function AjustesPage() {
+  const { papel } = usePapel()
+  const [perfis, setPerfis] = useState<Perfil[]>([])
+  const [novoEmail, setNovoEmail] = useState('')
   const [saldo, setSaldo] = useState<number | null>(null)
   const [alvo, setAlvo] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -18,7 +24,25 @@ export default function AjustesPage() {
     setSaldo(s)
   }
 
-  useEffect(() => { carregarSaldo() }, [])
+  useEffect(() => { carregarSaldo(); carregarPerfis() }, [])
+
+  async function carregarPerfis() {
+    const { data } = await supabase.from('perfis').select('*').eq('papel', 'escrivao').order('email')
+    setPerfis((data ?? []) as Perfil[])
+  }
+
+  async function addEscrivao(e: React.FormEvent) {
+    e.preventDefault()
+    const email = novoEmail.trim().toLowerCase()
+    if (!email) return
+    await supabase.from('perfis').upsert({ email, papel: 'escrivao' }, { onConflict: 'email' })
+    setNovoEmail(''); carregarPerfis()
+  }
+
+  async function removerEscrivao(email: string) {
+    await supabase.from('perfis').delete().eq('email', email)
+    carregarPerfis()
+  }
 
   async function calibrar(e: React.FormEvent) {
     e.preventDefault()
@@ -106,6 +130,45 @@ export default function AjustesPage() {
       <p className="text-xs text-gray-400">
         O ajuste aparece no Fluxo como "Ajuste de caixa" e pode ser conferido/excluído lá a qualquer momento.
       </p>
+
+      {/* Perfis de acesso (só admin) */}
+      {papel === 'admin' && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-6 space-y-4 mt-2">
+          <div className="flex items-center gap-2.5">
+            <NotebookPen size={18} className="text-gray-500" />
+            <div>
+              <h2 className="text-base font-black text-gray-900">Acesso de Escrivão</h2>
+              <p className="text-xs text-gray-400">Contas listadas aqui só verão a aba Escrivão.</p>
+            </div>
+          </div>
+
+          <form onSubmit={addEscrivao} className="flex items-center gap-2">
+            <input type="email" value={novoEmail} onChange={e => setNovoEmail(e.target.value)}
+              placeholder="email@do-escrivao.com" required
+              className="flex-1 border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm focus:border-gray-400 outline-none" />
+            <button type="submit" className="text-white text-sm font-bold px-4 py-2.5 rounded-lg" style={{ background: '#c0392b' }}>
+              Adicionar
+            </button>
+          </form>
+
+          <div className="space-y-1.5">
+            {perfis.length === 0 ? (
+              <p className="text-sm text-gray-300">Nenhum escrivão definido. Todos com conta têm acesso completo.</p>
+            ) : perfis.map(p => (
+              <div key={p.email} className="flex items-center justify-between bg-gray-50 rounded-lg px-3.5 py-2.5">
+                <span className="text-sm text-gray-700">{p.email}</span>
+                <button onClick={() => removerEscrivao(p.email)} className="text-gray-300 hover:text-red-500" title="Remover">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs text-gray-400">
+            A conta precisa ser criada normalmente (na tela de login → "Criar conta"). Depois adicione o e-mail aqui para limitar o acesso só ao Escrivão.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
