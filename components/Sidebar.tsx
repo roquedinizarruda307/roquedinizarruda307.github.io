@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Home, TrendingUp, TrendingDown, Users, HandCoins, Settings, Menu, X, LogOut, Repeat2, ArrowRight, NotebookPen } from 'lucide-react'
+import { Home, TrendingUp, TrendingDown, Users, HandCoins, Settings, Menu, X, LogOut, Repeat2, NotebookPen } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
@@ -79,11 +79,10 @@ export default function Sidebar() {
         {/* Footer */}
         <div className="px-4 pb-6">
           <div className="mb-3" style={{ borderTop: '1px solid #1e2235' }} />
-          <p className="text-[10px] font-bold tracking-widest uppercase px-3 mb-2" style={{ color: '#2e3450' }}>Visitante</p>
           <button onClick={handleLogout}
             className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl w-full transition-all hover:bg-white/5">
-            <ArrowRight size={14} style={{ color: '#c0392b' }} />
-            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#c0392b' }}>Acessar Admin</span>
+            <LogOut size={14} style={{ color: '#3d4460' }} />
+            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#3d4460' }}>Sair</span>
           </button>
         </div>
       </aside>

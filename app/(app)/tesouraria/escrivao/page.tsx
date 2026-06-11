@@ -26,7 +26,7 @@ export default function EscrivaoPage() {
       supabase.from('membros').select('*').order('nome'),
     ])
     setReunioes((r ?? []) as Reuniao[])
-    setMembros(m ?? [])
+    setMembros([...(m ?? [])].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })))
     setLoading(false)
     return (r ?? []) as Reuniao[]
   }, [])

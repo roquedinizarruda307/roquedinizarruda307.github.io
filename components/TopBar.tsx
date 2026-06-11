@@ -1,7 +1,6 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { Lock } from 'lucide-react'
 
 const LABELS: Record<string, string> = {
   '/tesouraria':            'Início',
@@ -24,12 +23,6 @@ export default function TopBar() {
       <div>
         <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: '#aaa' }}>Seção Atual</p>
         <p className="text-lg font-black tracking-tight text-gray-900 uppercase">{label}</p>
-      </div>
-      <div className="flex items-center gap-5">
-        <button className="flex items-center gap-2 border border-gray-200 rounded-full px-4 py-1.5 hover:bg-gray-50 transition-colors">
-          <Lock size={11} className="text-gray-400" />
-          <span className="text-[11px] font-bold tracking-widest uppercase text-gray-500">Somente Leitura</span>
-        </button>
       </div>
     </div>
   )
