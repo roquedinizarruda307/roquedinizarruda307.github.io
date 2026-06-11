@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Home, TrendingUp, TrendingDown, Users, HandCoins, Settings, Menu, X, LogOut, Repeat2, ArrowRight } from 'lucide-react'
+import { Home, TrendingUp, TrendingDown, Users, HandCoins, Settings, Menu, X, LogOut, Repeat2, ArrowRight, NotebookPen } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
@@ -14,6 +14,7 @@ const navItems = [
   { href: '/tesouraria/saidas',     label: 'Saídas',   icon: TrendingDown },
   { href: '/tesouraria/membros',    label: 'Membros',  icon: Users },
   { href: '/tesouraria/pagamentos', label: 'Pgto',     icon: HandCoins },
+  { href: '/tesouraria/escrivao',   label: 'Escrivão', icon: NotebookPen },
   { href: '/tesouraria/ajustes',    label: 'Ajustes',  icon: Settings },
 ]
 
