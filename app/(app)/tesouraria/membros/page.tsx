@@ -168,9 +168,12 @@ export default function MembrosPage() {
         </button>
       </div>
 
-      {/* Formulário */}
+      {/* Formulário (modal) */}
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 sm:pt-24 overflow-y-auto"
+          style={{ background: 'rgba(0,0,0,0.45)' }}
+          onClick={() => { setShowForm(false); setEditando(null) }}>
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm font-semibold text-gray-800">{editando ? 'Editar membro' : 'Novo membro'}</p>
             <button onClick={() => { setShowForm(false); setEditando(null) }} className="text-gray-300 hover:text-gray-500">
@@ -207,6 +210,7 @@ export default function MembrosPage() {
                 className="border border-gray-200 text-gray-500 text-sm px-4 py-2 rounded-lg hover:bg-gray-50">Cancelar</button>
             </div>
           </form>
+        </div>
         </div>
       )}
 
