@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
-import { Plus, Trash2, Check, FileSpreadsheet } from 'lucide-react'
+import { Plus, Trash2, Check, FileSpreadsheet, FileText } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
+import { exportarWord, escaparHtml } from '@/lib/word'
 
 type Reuniao = { id: string; data: string; titulo: string; ata: string }
 
@@ -85,6 +86,23 @@ export default function EscrivaoPage() {
     for (const m of membros) linhas.push([m.nome, presencas[m.id] ? 'Presente' : 'Ausente'])
     linhas.push([]); linhas.push(['Total presentes', presentes])
     exportarExcel(`presenca_${sel.data}.xlsx`, linhas, 'Presença')
+  }
+
+  function exportarAtaWord() {
+    if (!sel) return
+    const presentesNomes = membros.filter(m => presencas[m.id]).map(m => m.nome)
+    const ausentesNomes = membros.filter(m => !presencas[m.id]).map(m => m.nome)
+    const corpo =
+      `<h2 style="text-align:center;margin:0 0 4px">Capítulo Roque Diniz Arruda nº 307</h2>` +
+      `<p style="text-align:center;color:#666;margin:0 0 18px">Ordem DeMolay</p>` +
+      `<h3 style="margin:0">${escaparHtml(sel.titulo)}</h3>` +
+      `<p style="color:#666;margin:2px 0 16px">Data: ${fmtData(sel.data)}</p>` +
+      `<p><b>Presentes (${presentesNomes.length}):</b> ${presentesNomes.length ? escaparHtml(presentesNomes.join(', ')) : '—'}</p>` +
+      `<p><b>Ausentes (${ausentesNomes.length}):</b> ${ausentesNomes.length ? escaparHtml(ausentesNomes.join(', ')) : '—'}</p>` +
+      `<hr/>` +
+      `<h3>Ata</h3>` +
+      `<div>${ata ? escaparHtml(ata).replace(/\n/g, '<br/>') : '—'}</div>`
+    exportarWord(`ata_${sel.data}`, `Ata ${fmtData(sel.data)}`, corpo)
   }
 
   const presentes = membros.filter(m => presencas[m.id]).length
@@ -177,13 +195,19 @@ export default function EscrivaoPage() {
 
             {/* Ata */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <p className="text-sm font-black uppercase tracking-widest text-gray-700">Ata da reunião</p>
-                <button onClick={salvarAta} disabled={salvandoAta}
-                  className="flex items-center gap-1.5 text-white text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50"
-                  style={{ background: ataSalva ? '#16a34a' : '#c0392b' }}>
-                  {ataSalva ? <><Check size={14} /> Salva</> : salvandoAta ? 'Salvando...' : 'Salvar ata'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={exportarAtaWord}
+                    className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-bold px-3 py-2 rounded-lg hover:bg-gray-50">
+                    <FileText size={14} className="text-blue-600" /> Exportar Word
+                  </button>
+                  <button onClick={salvarAta} disabled={salvandoAta}
+                    className="flex items-center gap-1.5 text-white text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50"
+                    style={{ background: ataSalva ? '#16a34a' : '#c0392b' }}>
+                    {ataSalva ? <><Check size={14} /> Salva</> : salvandoAta ? 'Salvando...' : 'Salvar ata'}
+                  </button>
+                </div>
               </div>
               <textarea value={ata} onChange={e => { setAta(e.target.value); setAtaSalva(false) }}
                 placeholder="Escreva aqui a ata da reunião — pauta, decisões, deliberações, encaminhamentos…"
