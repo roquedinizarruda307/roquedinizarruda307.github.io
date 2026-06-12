@@ -50,7 +50,12 @@ export default function LoginPage() {
       options: { data: { nome } },
     })
     if (error) { setErro(error.message); setLoading(false); return }
-    setErro('Conta criada! Verifique seu e-mail para confirmar.')
+    // cria o perfil como PENDENTE (precisa de aprovação do admin)
+    await supabase.from('perfis').upsert(
+      { email: email.trim().toLowerCase(), papel: 'admin', aprovado: false },
+      { onConflict: 'email', ignoreDuplicates: true }
+    )
+    setErro('Conta criada! Aguarde a aprovação de um administrador para acessar o sistema.')
     setLoading(false)
   }
 

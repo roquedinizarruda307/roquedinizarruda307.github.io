@@ -12,6 +12,7 @@ type Perfil = { email: string; papel: string }
 export default function AjustesPage() {
   const { papel } = usePapel()
   const [perfis, setPerfis] = useState<Perfil[]>([])
+  const [pendentes, setPendentes] = useState<Perfil[]>([])
   const [novoEmail, setNovoEmail] = useState('')
   const [saldo, setSaldo] = useState<number | null>(null)
   const [alvo, setAlvo] = useState('')
@@ -27,8 +28,20 @@ export default function AjustesPage() {
   useEffect(() => { carregarSaldo(); carregarPerfis() }, [])
 
   async function carregarPerfis() {
-    const { data } = await supabase.from('perfis').select('*').eq('papel', 'escrivao').order('email')
-    setPerfis((data ?? []) as Perfil[])
+    const { data } = await supabase.from('perfis').select('*').order('email')
+    const todos = (data ?? []) as (Perfil & { aprovado: boolean })[]
+    setPerfis(todos.filter(p => p.aprovado && p.papel === 'escrivao'))
+    setPendentes(todos.filter(p => !p.aprovado))
+  }
+
+  async function aprovar(email: string, comoPapel: 'admin' | 'escrivao') {
+    await supabase.from('perfis').update({ aprovado: true, papel: comoPapel }).eq('email', email)
+    carregarPerfis()
+  }
+
+  async function recusar(email: string) {
+    await supabase.from('perfis').delete().eq('email', email)
+    carregarPerfis()
   }
 
   async function addEscrivao(e: React.FormEvent) {
@@ -130,6 +143,46 @@ export default function AjustesPage() {
       <p className="text-xs text-gray-400">
         O ajuste aparece no Fluxo como "Ajuste de caixa" e pode ser conferido/excluído lá a qualquer momento.
       </p>
+
+      {/* Solicitações pendentes (só admin) */}
+      {papel === 'admin' && (
+        <div className="bg-white rounded-2xl border shadow-sm px-6 py-6 space-y-4 mt-2"
+          style={{ borderColor: pendentes.length ? '#fde2e2' : '#f3f4f6' }}>
+          <div>
+            <h2 className="text-base font-black text-gray-900 flex items-center gap-2">
+              Solicitações de acesso
+              {pendentes.length > 0 && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#fef2f2', color: '#dc2626' }}>
+                  {pendentes.length}
+                </span>
+              )}
+            </h2>
+            <p className="text-xs text-gray-400">Contas novas só entram após você aprovar.</p>
+          </div>
+
+          {pendentes.length === 0 ? (
+            <p className="text-sm text-gray-300">Nenhuma solicitação pendente.</p>
+          ) : pendentes.map(p => (
+            <div key={p.email} className="flex items-center justify-between gap-3 flex-wrap bg-gray-50 rounded-xl px-4 py-3">
+              <span className="text-sm font-medium text-gray-800 min-w-0 truncate">{p.email}</span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => aprovar(p.email, 'admin')}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: '#16a34a' }}>
+                  Aprovar (Admin)
+                </button>
+                <button onClick={() => aprovar(p.email, 'escrivao')}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: '#eef2ff', color: '#4338ca' }}>
+                  Aprovar (Escrivão)
+                </button>
+                <button onClick={() => recusar(p.email)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: '#fef2f2', color: '#dc2626' }}>
+                  Recusar
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Perfis de acesso (só admin) */}
       {papel === 'admin' && (
