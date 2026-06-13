@@ -318,6 +318,20 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
     await supabase.from('evento_pedidos').update({ retirado: novo }).eq('id', p.id)
   }
 
+  // Altera a quantidade do pedido; se tiver item vinculado, recalcula o valor (preço x qtd)
+  async function setQtdPedido(p: Pedido, novaQtd: number) {
+    if (novaQtd < 1) return
+    const item = itens.find(i => i.id === p.item_id)
+    const novoValor = item ? item.valor * novaQtd : +p.valor
+    setPedidos(prev => prev.map(x => x.id === p.id ? { ...x, qtd: novaQtd, valor: novoValor } : x))
+    await supabase.from('evento_pedidos').update({ qtd: novaQtd, valor: novoValor }).eq('id', p.id)
+    // se já estava pago, atualiza o valor lançado no caixa
+    if (p.pago && p.transacao_id) {
+      await supabase.from('transacoes').update({ valor: novoValor }).eq('id', p.transacao_id)
+    }
+    onMudou()
+  }
+
   async function delPedido(p: Pedido) {
     if (p.transacao_id) await supabase.from('transacoes').delete().eq('id', p.transacao_id)
     setPedidos(prev => prev.filter(x => x.id !== p.id))
@@ -387,7 +401,13 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* quantidade (ex.: 2 kits por pessoa) */}
+                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                  <button onClick={() => setQtdPedido(p, p.qtd - 1)} className="px-2 py-1 text-gray-500 hover:bg-gray-50">−</button>
+                  <span className="px-2 text-xs font-bold text-gray-700 min-w-[36px] text-center">{p.qtd}x</span>
+                  <button onClick={() => setQtdPedido(p, p.qtd + 1)} className="px-2 py-1 text-gray-500 hover:bg-gray-50">+</button>
+                </div>
                 <button onClick={() => togglePago(p)}
                   className="text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg"
                   style={p.pago ? { background: '#f0fdf4', color: '#16a34a' } : { background: '#fef2f2', color: '#dc2626' }}>
