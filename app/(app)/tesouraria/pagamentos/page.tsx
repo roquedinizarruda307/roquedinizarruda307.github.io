@@ -240,7 +240,15 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
 
 // ─── Corpo de evento tipo "lista de pedidos" (ex.: camisetas) ─────────────────
 type ItemEv = { id: string; evento_id: string; nome: string; valor: number }
-type Pedido = { id: string; evento_id: string; nome: string; membro_id: string | null; item_id: string | null; item_nome: string | null; qtd: number; valor: number; pago: boolean; retirado: boolean; transacao_id: string | null; tamanho: string | null; numero: string | null }
+type LinhaItem = { item_id: string; nome: string; qtd: number; valor_unit: number }
+type Pedido = { id: string; evento_id: string; nome: string; membro_id: string | null; item_id: string | null; item_nome: string | null; qtd: number; valor: number; pago: boolean; retirado: boolean; transacao_id: string | null; tamanho: string | null; numero: string | null; itens: LinhaItem[] | null }
+
+// resumo textual dos itens de um pedido (suporta multi-item novo e item único antigo)
+function resumoItens(p: Pedido): string {
+  if (Array.isArray(p.itens) && p.itens.length) return p.itens.map(l => `${l.qtd}x ${l.nome}`).join(', ')
+  if (p.item_nome) return `${p.qtd}x ${p.item_nome}`
+  return ''
+}
 
 function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: Membro[]; onMudou: () => void; onExcluir: () => void }) {
   const [itens, setItens] = useState<ItemEv[]>([])
@@ -257,6 +265,7 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
   const [pValor, setPValor] = useState('')
   const [pTamanho, setPTamanho] = useState('')
   const [pNumero, setPNumero] = useState('')
+  const [linhas, setLinhas] = useState<LinhaItem[]>([])   // carrinho de itens do pedido
 
   const fetchTudo = useCallback(async () => {
     setLoading(true)
@@ -279,20 +288,40 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
     await supabase.from('evento_itens').delete().eq('id', id); fetchTudo()
   }
 
+  const totalLinhas = linhas.reduce((s, l) => s + l.qtd * l.valor_unit, 0)
+
+  // adiciona um item ao carrinho do pedido (soma se já existir)
+  function addLinha() {
+    const item = itens.find(i => i.id === pItem)
+    if (!item) return
+    const qtd = +pQtd || 1
+    setLinhas(prev => {
+      const idx = prev.findIndex(l => l.item_id === item.id)
+      if (idx >= 0) { const cp = [...prev]; cp[idx] = { ...cp[idx], qtd: cp[idx].qtd + qtd }; return cp }
+      return [...prev, { item_id: item.id, nome: item.nome, qtd, valor_unit: item.valor }]
+    })
+    setPItem(''); setPQtd('1')
+  }
+  function removeLinha(item_id: string) {
+    setLinhas(prev => prev.filter(l => l.item_id !== item_id))
+  }
+
   async function addPedido(e: React.FormEvent) {
     e.preventDefault()
     const membro = membros.find(m => m.id === pMembro)
     const nomeFinal = membro ? membro.nome : pNome.trim()
     if (!nomeFinal) return
-    const item = itens.find(i => i.id === pItem)
-    const qtd = +pQtd || 1
-    const valor = pValor !== '' ? +pValor : (item ? item.valor * qtd : 0)
+    // dois caminhos: carrinho com itens, ou valor avulso
+    const usaCarrinho = linhas.length > 0
+    const valor = usaCarrinho ? totalLinhas : (pValor !== '' ? +pValor : 0)
+    const qtdResumo = usaCarrinho ? linhas.reduce((s, l) => s + l.qtd, 0) : 1
     await supabase.from('evento_pedidos').insert([{
       evento_id: ev.id, nome: nomeFinal, membro_id: membro?.id ?? null,
-      item_id: item?.id ?? null, item_nome: item?.nome ?? null, qtd, valor,
+      item_id: null, item_nome: null, qtd: qtdResumo, valor,
+      itens: usaCarrinho ? linhas : null,
       tamanho: pTamanho.trim() || null, numero: pNumero.trim() || null,
     }])
-    setPNome(''); setPMembro(''); setPItem(''); setPQtd('1'); setPValor(''); setPTamanho(''); setPNumero(''); fetchTudo(); onMudou()
+    setPNome(''); setPMembro(''); setPItem(''); setPQtd('1'); setPValor(''); setPTamanho(''); setPNumero(''); setLinhas([]); fetchTudo(); onMudou()
   }
 
   async function togglePago(p: Pedido) {
@@ -300,9 +329,10 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
     setPedidos(prev => prev.map(x => x.id === p.id ? { ...x, pago: novo } : x))
     if (novo) {
       // lança no caixa
+      const resumo = resumoItens(p)
       const { data } = await supabase.from('transacoes').insert([{
         tipo: 'entrada', valor: p.valor, data: new Date().toISOString().slice(0, 10),
-        categoria: 'Evento', descricao: `${ev.nome} — ${p.nome}${p.item_nome ? ` (${p.qtd}x ${p.item_nome})` : ''}`,
+        categoria: 'Evento', descricao: `${ev.nome} — ${p.nome}${resumo ? ` (${resumo})` : ''}`,
       }]).select('id').single()
       await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', p.id)
     } else {
@@ -341,10 +371,18 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
 
   const total = pedidos.reduce((s, p) => s + +p.valor, 0)
   const arrecadado = pedidos.filter(p => p.pago).reduce((s, p) => s + +p.valor, 0)
-  // contagem por item
+  // contagem por item (soma multi-item novo + item único antigo)
   const contagem = itens.map(it => {
-    const ps = pedidos.filter(p => p.item_id === it.id)
-    return { ...it, qtd: ps.reduce((s, p) => s + p.qtd, 0), pedidos: ps.length }
+    let qtd = 0, npedidos = 0
+    for (const p of pedidos) {
+      if (Array.isArray(p.itens)) {
+        const l = p.itens.find(x => x.item_id === it.id)
+        if (l) { qtd += l.qtd; npedidos++ }
+      } else if (p.item_id === it.id) {
+        qtd += p.qtd; npedidos++
+      }
+    }
+    return { ...it, qtd, pedidos: npedidos }
   })
 
   if (loading) return <div className="py-6 text-center text-sm text-gray-300">Carregando...</div>
@@ -391,7 +429,7 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
                   {p.membro_id && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#eef2ff', color: '#4338ca' }}>MEMBRO</span>}
                 </p>
                 <p className="text-xs" style={{ color: p.pago ? '#16a34a' : '#dc2626' }}>
-                  {p.item_nome ? `${p.qtd}x ${p.item_nome} · ` : ''}{p.pago ? `Pago ${fmt(+p.valor)}` : `Deve ${fmt(+p.valor)}`}
+                  {resumoItens(p) ? `${resumoItens(p)} · ` : ''}{p.pago ? `Pago ${fmt(+p.valor)}` : `Deve ${fmt(+p.valor)}`}
                 </p>
                 {(p.tamanho || p.numero) && (
                   <p className="text-[11px] text-gray-500 mt-0.5">
@@ -402,12 +440,14 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
                 )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {/* quantidade (ex.: 2 kits por pessoa) */}
-                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                  <button onClick={() => setQtdPedido(p, p.qtd - 1)} className="px-2 py-1 text-gray-500 hover:bg-gray-50">−</button>
-                  <span className="px-2 text-xs font-bold text-gray-700 min-w-[36px] text-center">{p.qtd}x</span>
-                  <button onClick={() => setQtdPedido(p, p.qtd + 1)} className="px-2 py-1 text-gray-500 hover:bg-gray-50">+</button>
-                </div>
+                {/* quantidade (só p/ pedidos de item único; multi-item edita pelo carrinho) */}
+                {!Array.isArray(p.itens) && p.item_id && (
+                  <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                    <button onClick={() => setQtdPedido(p, p.qtd - 1)} className="px-2 py-1 text-gray-500 hover:bg-gray-50">−</button>
+                    <span className="px-2 text-xs font-bold text-gray-700 min-w-[36px] text-center">{p.qtd}x</span>
+                    <button onClick={() => setQtdPedido(p, p.qtd + 1)} className="px-2 py-1 text-gray-500 hover:bg-gray-50">+</button>
+                  </div>
+                )}
                 <button onClick={() => togglePago(p)}
                   className="text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg"
                   style={p.pago ? { background: '#f0fdf4', color: '#16a34a' } : { background: '#fef2f2', color: '#dc2626' }}>
@@ -426,13 +466,41 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
 
         {/* Adicionar pedido */}
         <form onSubmit={addPedido} className="space-y-2">
+          {/* Carrinho: escolher vários itens (ex.: 1 Kit + 1 Camisa) */}
+          {itens.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-2.5 space-y-2">
+              {linhas.length > 0 && (
+                <div className="space-y-1">
+                  {linhas.map(l => (
+                    <div key={l.item_id} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">{l.qtd}x {l.nome}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500 text-xs">{fmt(l.qtd * l.valor_unit)}</span>
+                        <button type="button" onClick={() => removeLinha(l.item_id)} className="text-gray-300 hover:text-red-500"><X size={13} /></button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex justify-end text-xs font-bold text-gray-700 pt-1.5 border-t border-gray-200">Total: {fmt(totalLinhas)}</div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <select value={pItem} onChange={e => setPItem(e.target.value)} className={inp + ' appearance-none flex-1'}>
+                  <option value="">Escolher item…</option>
+                  {itens.map(it => <option key={it.id} value={it.id}>{it.nome} — {fmt(it.valor)}</option>)}
+                </select>
+                <input value={pQtd} onChange={e => setPQtd(e.target.value)} type="number" min="1" className={inp + ' w-16'} />
+                <button type="button" onClick={addLinha} disabled={!pItem}
+                  className="text-white text-sm font-medium px-3 py-2 rounded-lg whitespace-nowrap flex-shrink-0 disabled:opacity-40" style={{ background: '#111827' }}>+ Add</button>
+              </div>
+            </div>
+          )}
           {ev.personalizavel && (
             <div className="grid grid-cols-2 gap-2">
               <input value={pTamanho} onChange={e => setPTamanho(e.target.value)} placeholder="Tamanho (ex.: M)" className={inp} />
               <input value={pNumero} onChange={e => setPNumero(e.target.value)} placeholder="Número (ex.: 10)" className={inp} />
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_130px_60px_100px_auto] gap-2 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_120px_auto] gap-2 items-center">
           {/* Membro (vincula dívida) */}
           <select value={pMembro} onChange={e => setPMembro(e.target.value)} className={inp + ' appearance-none'}>
             <option value="">Comprador externo</option>
@@ -441,13 +509,10 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
           {/* Nome livre (usado se não for membro) */}
           <input value={pNome} onChange={e => setPNome(e.target.value)} placeholder="Nome (se externo)" disabled={!!pMembro}
             className={inp + (pMembro ? ' opacity-50' : '')} />
-          <select value={pItem} onChange={e => { setPItem(e.target.value); setPValor('') }} className={inp + ' appearance-none'}>
-            <option value="">Item (opcional)</option>
-            {itens.map(it => <option key={it.id} value={it.id}>{it.nome}</option>)}
-          </select>
-          <input value={pQtd} onChange={e => setPQtd(e.target.value)} type="number" min="1" placeholder="Qtd" className={inp} />
-          <input value={pValor} onChange={e => setPValor(e.target.value)} type="number" step="0.01"
-            placeholder={pItem ? 'auto' : 'Valor'} className={inp} />
+          {/* Valor: automático pelo carrinho, ou avulso quando vazio */}
+          <input value={linhas.length > 0 ? totalLinhas.toFixed(2) : pValor} onChange={e => setPValor(e.target.value)} type="number" step="0.01"
+            placeholder="Valor avulso" disabled={linhas.length > 0}
+            className={inp + (linhas.length > 0 ? ' opacity-60' : '')} />
           <button className="text-white text-sm font-medium px-3.5 py-2 rounded-lg whitespace-nowrap" style={{ background: '#c0392b' }}>+ Pedido</button>
           </div>
         </form>
