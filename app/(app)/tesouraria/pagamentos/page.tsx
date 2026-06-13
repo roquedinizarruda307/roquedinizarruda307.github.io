@@ -352,10 +352,12 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
             </div>
           ))}
         </div>
-        <form onSubmit={addItem} className="flex items-center gap-2">
+        <form onSubmit={addItem} className="flex flex-col sm:flex-row sm:items-center gap-2">
           <input value={itemNome} onChange={e => setItemNome(e.target.value)} placeholder="Item (ex.: Camiseta P)" className={inp + ' flex-1'} />
-          <input value={itemValor} onChange={e => setItemValor(e.target.value)} type="number" step="0.01" placeholder="Valor" className={inp + ' w-28'} />
-          <button className="text-white text-sm font-medium px-3.5 py-2 rounded-lg" style={{ background: '#111827' }}>+ Item</button>
+          <div className="flex gap-2">
+            <input value={itemValor} onChange={e => setItemValor(e.target.value)} type="number" step="0.01" placeholder="Valor" className={inp + ' flex-1 sm:w-28'} />
+            <button className="text-white text-sm font-medium px-3.5 py-2 rounded-lg whitespace-nowrap flex-shrink-0" style={{ background: '#111827' }}>+ Item</button>
+          </div>
         </form>
       </div>
 
