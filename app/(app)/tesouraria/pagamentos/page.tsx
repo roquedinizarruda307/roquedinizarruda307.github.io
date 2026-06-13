@@ -241,7 +241,7 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
 // ─── Corpo de evento tipo "lista de pedidos" (ex.: camisetas) ─────────────────
 type ItemEv = { id: string; evento_id: string; nome: string; valor: number }
 type LinhaItem = { item_id: string; nome: string; qtd: number; valor_unit: number }
-type Pedido = { id: string; evento_id: string; nome: string; membro_id: string | null; item_id: string | null; item_nome: string | null; qtd: number; valor: number; pago: boolean; retirado: boolean; transacao_id: string | null; tamanho: string | null; numero: string | null; itens: LinhaItem[] | null }
+type Pedido = { id: string; evento_id: string; nome: string; membro_id: string | null; item_id: string | null; item_nome: string | null; qtd: number; valor: number; pago: boolean; retirado: boolean; transacao_id: string | null; tamanho: string | null; numero: string | null; nome_camisa: string | null; itens: LinhaItem[] | null }
 
 // resumo textual dos itens de um pedido (suporta multi-item novo e item único antigo)
 function resumoItens(p: Pedido): string {
@@ -265,6 +265,7 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
   const [pValor, setPValor] = useState('')
   const [pTamanho, setPTamanho] = useState('')
   const [pNumero, setPNumero] = useState('')
+  const [pNomeCamisa, setPNomeCamisa] = useState('')
   const [linhas, setLinhas] = useState<LinhaItem[]>([])   // carrinho de itens do pedido
 
   const fetchTudo = useCallback(async () => {
@@ -319,9 +320,9 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
       evento_id: ev.id, nome: nomeFinal, membro_id: membro?.id ?? null,
       item_id: null, item_nome: null, qtd: qtdResumo, valor,
       itens: usaCarrinho ? linhas : null,
-      tamanho: pTamanho.trim() || null, numero: pNumero.trim() || null,
+      tamanho: pTamanho.trim() || null, numero: pNumero.trim() || null, nome_camisa: pNomeCamisa.trim() || null,
     }])
-    setPNome(''); setPMembro(''); setPItem(''); setPQtd('1'); setPValor(''); setPTamanho(''); setPNumero(''); setLinhas([]); fetchTudo(); onMudou()
+    setPNome(''); setPMembro(''); setPItem(''); setPQtd('1'); setPValor(''); setPTamanho(''); setPNumero(''); setPNomeCamisa(''); setLinhas([]); fetchTudo(); onMudou()
   }
 
   async function togglePago(p: Pedido) {
@@ -431,11 +432,13 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
                 <p className="text-xs" style={{ color: p.pago ? '#16a34a' : '#dc2626' }}>
                   {resumoItens(p) ? `${resumoItens(p)} · ` : ''}{p.pago ? `Pago ${fmt(+p.valor)}` : `Deve ${fmt(+p.valor)}`}
                 </p>
-                {(p.tamanho || p.numero) && (
+                {(p.tamanho || p.numero || p.nome_camisa) && (
                   <p className="text-[11px] text-gray-500 mt-0.5">
                     {p.tamanho && <span className="font-semibold">Tam: {p.tamanho}</span>}
                     {p.tamanho && p.numero && ' · '}
                     {p.numero && <span className="font-semibold">Nº {p.numero}</span>}
+                    {(p.tamanho || p.numero) && p.nome_camisa && ' · '}
+                    {p.nome_camisa && <span className="font-semibold">Nome: {p.nome_camisa}</span>}
                   </p>
                 )}
               </div>
@@ -495,9 +498,10 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
             </div>
           )}
           {ev.personalizavel && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <input value={pTamanho} onChange={e => setPTamanho(e.target.value)} placeholder="Tamanho (ex.: M)" className={inp} />
               <input value={pNumero} onChange={e => setPNumero(e.target.value)} placeholder="Número (ex.: 10)" className={inp} />
+              <input value={pNomeCamisa} onChange={e => setPNomeCamisa(e.target.value)} placeholder="Nome na camisa" className={inp} />
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_120px_auto] gap-2 items-center">
