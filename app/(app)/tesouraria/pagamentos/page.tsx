@@ -240,7 +240,7 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
 
 // ─── Corpo de evento tipo "lista de pedidos" (ex.: camisetas) ─────────────────
 type ItemEv = { id: string; evento_id: string; nome: string; valor: number }
-type Pedido = { id: string; evento_id: string; nome: string; membro_id: string | null; item_id: string | null; item_nome: string | null; qtd: number; valor: number; pago: boolean; retirado: boolean; transacao_id: string | null }
+type Pedido = { id: string; evento_id: string; nome: string; membro_id: string | null; item_id: string | null; item_nome: string | null; qtd: number; valor: number; pago: boolean; retirado: boolean; transacao_id: string | null; tamanho: string | null; numero: string | null }
 
 function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: Membro[]; onMudou: () => void; onExcluir: () => void }) {
   const [itens, setItens] = useState<ItemEv[]>([])
@@ -255,6 +255,8 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
   const [pItem, setPItem] = useState('')
   const [pQtd, setPQtd] = useState('1')
   const [pValor, setPValor] = useState('')
+  const [pTamanho, setPTamanho] = useState('')
+  const [pNumero, setPNumero] = useState('')
 
   const fetchTudo = useCallback(async () => {
     setLoading(true)
@@ -288,8 +290,9 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
     await supabase.from('evento_pedidos').insert([{
       evento_id: ev.id, nome: nomeFinal, membro_id: membro?.id ?? null,
       item_id: item?.id ?? null, item_nome: item?.nome ?? null, qtd, valor,
+      tamanho: pTamanho.trim() || null, numero: pNumero.trim() || null,
     }])
-    setPNome(''); setPMembro(''); setPItem(''); setPQtd('1'); setPValor(''); fetchTudo(); onMudou()
+    setPNome(''); setPMembro(''); setPItem(''); setPQtd('1'); setPValor(''); setPTamanho(''); setPNumero(''); fetchTudo(); onMudou()
   }
 
   async function togglePago(p: Pedido) {
@@ -376,6 +379,13 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
                 <p className="text-xs" style={{ color: p.pago ? '#16a34a' : '#dc2626' }}>
                   {p.item_nome ? `${p.qtd}x ${p.item_nome} · ` : ''}{p.pago ? `Pago ${fmt(+p.valor)}` : `Deve ${fmt(+p.valor)}`}
                 </p>
+                {(p.tamanho || p.numero) && (
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    {p.tamanho && <span className="font-semibold">Tam: {p.tamanho}</span>}
+                    {p.tamanho && p.numero && ' · '}
+                    {p.numero && <span className="font-semibold">Nº {p.numero}</span>}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => togglePago(p)}
@@ -395,7 +405,14 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
         </div>
 
         {/* Adicionar pedido */}
-        <form onSubmit={addPedido} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_130px_60px_100px_auto] gap-2 items-center">
+        <form onSubmit={addPedido} className="space-y-2">
+          {ev.personalizavel && (
+            <div className="grid grid-cols-2 gap-2">
+              <input value={pTamanho} onChange={e => setPTamanho(e.target.value)} placeholder="Tamanho (ex.: M)" className={inp} />
+              <input value={pNumero} onChange={e => setPNumero(e.target.value)} placeholder="Número (ex.: 10)" className={inp} />
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_130px_60px_100px_auto] gap-2 items-center">
           {/* Membro (vincula dívida) */}
           <select value={pMembro} onChange={e => setPMembro(e.target.value)} className={inp + ' appearance-none'}>
             <option value="">Comprador externo</option>
@@ -412,6 +429,7 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
           <input value={pValor} onChange={e => setPValor(e.target.value)} type="number" step="0.01"
             placeholder={pItem ? 'auto' : 'Valor'} className={inp} />
           <button className="text-white text-sm font-medium px-3.5 py-2 rounded-lg whitespace-nowrap" style={{ background: '#c0392b' }}>+ Pedido</button>
+          </div>
         </form>
       </div>
 
