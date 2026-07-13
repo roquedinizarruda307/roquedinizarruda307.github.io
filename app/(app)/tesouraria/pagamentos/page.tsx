@@ -795,12 +795,148 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
   )
 }
 
+// ─── Tab: Pendências ──────────────────────────────────────────────────────────
+type Pendencia = { tipo: 'Mensalidade' | 'Anuidade' | 'Evento' | 'Pedido'; ref: string; valor: number }
+
+const PEND_CORES: Record<Pendencia['tipo'], { bg: string; color: string }> = {
+  Mensalidade: { bg: '#fef2f2', color: '#dc2626' },
+  Anuidade:    { bg: '#fefce8', color: '#a16207' },
+  Evento:      { bg: '#eef2ff', color: '#4338ca' },
+  Pedido:      { bg: '#eff6ff', color: '#1d4ed8' },
+}
+
+function TabPendencias({ registrar }: { registrar: (fn: () => string[][]) => void }) {
+  const [membros, setMembros] = useState<Membro[]>([])
+  const [porMembro, setPorMembro] = useState<Record<string, Pendencia[]>>({})
+  const [loading, setLoading] = useState(true)
+  const [aberto, setAberto] = useState<string | null>(null)
+
+  const fetchDados = useCallback(async () => {
+    setLoading(true)
+    const hoje = new Date()
+    const anoAtual = hoje.getFullYear()
+    const mesAtual = hoje.getMonth() + 1
+
+    const [{ data: ms }, { data: mens }, { data: anu }, { data: evs }, { data: parts }, { data: peds }] = await Promise.all([
+      supabase.from('membros').select('*').order('nome'),
+      supabase.from('mensalidades').select('membro_id, mes, ano, status').eq('ano', anoAtual),
+      supabase.from('anuidades').select('membro_id, ano, valor, status').neq('status', 'pago'),
+      supabase.from('pagamentos_eventos').select('id, nome, valor, tipo'),
+      supabase.from('evento_participantes').select('*').eq('pago', false),
+      supabase.from('evento_pedidos').select('*').eq('pago', false).not('membro_id', 'is', null),
+    ])
+
+    const mapa: Record<string, Pendencia[]> = {}
+    const add = (mid: string, p: Pendencia) => { (mapa[mid] = mapa[mid] ?? []).push(p) }
+
+    // Mensalidades: meses já decorridos do ano sem "pago" nem "isento"
+    const quitadas = new Set((mens ?? []).filter(r => r.status === 'pago' || r.status === 'isento').map(r => `${r.membro_id}-${r.mes}`))
+    for (const m of ms ?? [])
+      for (let mes = 1; mes <= mesAtual; mes++)
+        if (!quitadas.has(`${m.id}-${mes}`)) add(m.id, { tipo: 'Mensalidade', ref: `${MESES_C[mes - 1]}/${anoAtual}`, valor: 20 })
+
+    // Anuidades em aberto (qualquer ano)
+    for (const a of anu ?? []) add(a.membro_id, { tipo: 'Anuidade', ref: String(a.ano), valor: +a.valor })
+
+    // Eventos: participações não pagas (qualquer data)
+    for (const p of parts ?? []) {
+      const ev = (evs ?? []).find(e => e.id === p.evento_id)
+      if (ev) add(p.membro_id, { tipo: 'Evento', ref: ev.nome, valor: ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor })
+    }
+
+    // Pedidos de listas (ex.: camisetas) não pagos, vinculados a membros
+    for (const pd of peds ?? []) {
+      const ev = (evs ?? []).find(e => e.id === pd.evento_id)
+      const resumo = resumoItens(pd as Pedido)
+      add(pd.membro_id, { tipo: 'Pedido', ref: `${ev?.nome ?? 'Evento'}${resumo ? ` (${resumo})` : ''}`, valor: +pd.valor })
+    }
+
+    setMembros(ms ?? []); setPorMembro(mapa); setLoading(false)
+  }, [])
+
+  useEffect(() => { fetchDados() }, [fetchDados])
+
+  const devedores = membros.filter(m => (porMembro[m.id]?.length ?? 0) > 0)
+  const totalGeral = devedores.reduce((s, m) => s + porMembro[m.id].reduce((x, p) => x + p.valor, 0), 0)
+
+  useEffect(() => {
+    registrar(() => {
+      const linhas: string[][] = [['Membro', 'Tipo', 'Referência', 'Valor']]
+      for (const m of membros) for (const p of porMembro[m.id] ?? []) linhas.push([m.nome, p.tipo, p.ref, fmt(p.valor)])
+      linhas.push(['TOTAL', '', '', fmt(totalGeral)])
+      return linhas
+    })
+  }, [membros, porMembro, totalGeral, registrar])
+
+  if (loading) return <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
+
+  return (
+    <div className="space-y-4">
+      {/* Resumo geral */}
+      <div className="rounded-2xl border px-5 py-4 shadow-sm flex items-center justify-between flex-wrap gap-2"
+        style={{ background: '#fef2f2', borderColor: '#fde2e2' }}>
+        <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#dc2626' }}>
+          {devedores.length} membro{devedores.length === 1 ? '' : 's'} com pendências ativas
+        </p>
+        <p className="text-xl font-black" style={{ color: '#c0392b' }}>{fmt(totalGeral)}</p>
+      </div>
+
+      {devedores.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-16 text-center text-sm text-gray-300">
+          Nenhuma pendência ativa. Tudo em dia!
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          {devedores.map((m, i) => {
+            const pends = porMembro[m.id]
+            const total = pends.reduce((s, p) => s + p.valor, 0)
+            const exp = aberto === m.id
+            return (
+              <div key={m.id} className={i < devedores.length - 1 ? 'border-b border-gray-50' : ''}>
+                <button onClick={() => setAberto(exp ? null : m.id)}
+                  className="w-full flex items-center justify-between gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm"
+                      style={{ background: '#f3f4f6', color: '#6b7280' }}>{inicial(m.nome)}</div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-gray-900 uppercase tracking-tight text-sm truncate">{m.nome}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{pends.length} pendência{pends.length === 1 ? '' : 's'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#fef2f2', color: '#dc2626' }}>{fmt(total)}</span>
+                    <ChevronDown size={16} className="text-gray-400 transition-transform" style={{ transform: exp ? 'rotate(180deg)' : 'none' }} />
+                  </div>
+                </button>
+                {exp && (
+                  <div className="border-t border-gray-50 px-4 sm:px-6 py-3">
+                    {pends.map((p, j) => (
+                      <div key={j} className="flex items-center justify-between gap-3 py-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0"
+                            style={{ background: PEND_CORES[p.tipo].bg, color: PEND_CORES[p.tipo].color }}>{p.tipo}</span>
+                          <span className="text-sm text-gray-700 truncate">{p.ref}</span>
+                        </div>
+                        <span className="text-sm font-semibold flex-shrink-0" style={{ color: '#dc2626' }}>{fmt(p.valor)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PagamentosPage() {
   const hoje = new Date()
   const [mesSel, setMesSel] = useState(hoje.getMonth() + 1)
   const [anoSel, setAnoSel] = useState(hoje.getFullYear())
-  const [tab, setTab] = useState<'mensalidades' | 'anuidades' | 'eventos'>('mensalidades')
+  const [tab, setTab] = useState<'mensalidades' | 'anuidades' | 'eventos' | 'pendencias'>('mensalidades')
   const [resumo, setResumo] = useState({ pendente: 0, anuidade: 0, mensalidades: 0, eventos: 0 })
 
   // função que gera as linhas do relatório da aba ativa
@@ -858,11 +994,13 @@ export default function PagamentosPage() {
   }
 
   const mesLabel = MESES_C[mesSel - 1]
-  const mostraMeses = tab !== 'anuidades'
+  const mostraMeses = tab !== 'anuidades' && tab !== 'pendencias'
+  const mostraAnos = tab !== 'pendencias'
   const tabs = [
     { id: 'mensalidades' as const, label: 'Mensalidades' },
     { id: 'anuidades'    as const, label: 'Anuidades' },
     { id: 'eventos'      as const, label: 'Eventos' },
+    { id: 'pendencias'   as const, label: 'Pendências' },
   ]
 
   const cards = [
@@ -914,7 +1052,7 @@ export default function PagamentosPage() {
         {/* separador */}
         {mostraMeses && <div className="w-px h-6 bg-gray-200 mx-1" />}
 
-        {ANOS.map(a => {
+        {mostraAnos && ANOS.map(a => {
           const active = anoSel === a
           return (
             <button key={a} onClick={() => setAnoSel(a)}
@@ -956,6 +1094,7 @@ export default function PagamentosPage() {
       {tab === 'mensalidades' && <TabMensalidades mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
       {tab === 'anuidades'    && <TabAnuidades ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
       {tab === 'eventos'      && <TabEventos mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
+      {tab === 'pendencias'   && <TabPendencias registrar={registrar} />}
     </div>
   )
 }

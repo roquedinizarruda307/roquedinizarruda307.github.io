@@ -13,6 +13,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Sem Supabase configurado, libera (modo desenvolvimento)
     if (!isSupabaseConfigured()) { setEstado('liberado'); return }
+    // Rodando local (npm run dev), libera sem login — nunca vale no site publicado
+    if (process.env.NODE_ENV === 'development') { setEstado('liberado'); return }
 
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
