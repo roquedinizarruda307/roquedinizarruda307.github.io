@@ -796,7 +796,13 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
 }
 
 // ─── Tab: Pendências ──────────────────────────────────────────────────────────
-type Pendencia = { tipo: 'Mensalidade' | 'Anuidade' | 'Evento' | 'Pedido'; ref: string; valor: number }
+type PendDados =
+  | { t: 'mensalidade'; id?: string; mes: number; ano: number }
+  | { t: 'anuidade'; id: string }
+  | { t: 'participante'; id: string }
+  | { t: 'pedido'; id: string; descricao: string }
+
+type Pendencia = { key: string; tipo: 'Mensalidade' | 'Anuidade' | 'Evento' | 'Pedido'; ref: string; valor: number; dados: PendDados }
 
 const PEND_CORES: Record<Pendencia['tipo'], { bg: string; color: string }> = {
   Mensalidade: { bg: '#fef2f2', color: '#dc2626' },
@@ -805,11 +811,12 @@ const PEND_CORES: Record<Pendencia['tipo'], { bg: string; color: string }> = {
   Pedido:      { bg: '#eff6ff', color: '#1d4ed8' },
 }
 
-function TabPendencias({ registrar }: { registrar: (fn: () => string[][]) => void }) {
+function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][]) => void; onMudou: () => void }) {
   const [membros, setMembros] = useState<Membro[]>([])
   const [porMembro, setPorMembro] = useState<Record<string, Pendencia[]>>({})
   const [loading, setLoading] = useState(true)
   const [aberto, setAberto] = useState<string | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
 
   const fetchDados = useCallback(async () => {
     setLoading(true)
@@ -819,8 +826,8 @@ function TabPendencias({ registrar }: { registrar: (fn: () => string[][]) => voi
 
     const [{ data: ms }, { data: mens }, { data: anu }, { data: evs }, { data: parts }, { data: peds }] = await Promise.all([
       supabase.from('membros').select('*').order('nome'),
-      supabase.from('mensalidades').select('membro_id, mes, ano, status').eq('ano', anoAtual),
-      supabase.from('anuidades').select('membro_id, ano, valor, status').neq('status', 'pago'),
+      supabase.from('mensalidades').select('id, membro_id, mes, ano, status').eq('ano', anoAtual),
+      supabase.from('anuidades').select('id, membro_id, ano, valor, status').neq('status', 'pago'),
       supabase.from('pagamentos_eventos').select('id, nome, valor, tipo'),
       supabase.from('evento_participantes').select('*').eq('pago', false),
       supabase.from('evento_pedidos').select('*').eq('pago', false).not('membro_id', 'is', null),
@@ -831,24 +838,31 @@ function TabPendencias({ registrar }: { registrar: (fn: () => string[][]) => voi
 
     // Mensalidades: meses já decorridos do ano sem "pago" nem "isento"
     const quitadas = new Set((mens ?? []).filter(r => r.status === 'pago' || r.status === 'isento').map(r => `${r.membro_id}-${r.mes}`))
+    const regMens: Record<string, string> = {}
+    for (const r of mens ?? []) regMens[`${r.membro_id}-${r.mes}`] = r.id
     for (const m of ms ?? [])
       for (let mes = 1; mes <= mesAtual; mes++)
-        if (!quitadas.has(`${m.id}-${mes}`)) add(m.id, { tipo: 'Mensalidade', ref: `${MESES_C[mes - 1]}/${anoAtual}`, valor: 20 })
+        if (!quitadas.has(`${m.id}-${mes}`))
+          add(m.id, { key: `mens-${m.id}-${mes}`, tipo: 'Mensalidade', ref: `${MESES_C[mes - 1]}/${anoAtual}`, valor: 20,
+            dados: { t: 'mensalidade', id: regMens[`${m.id}-${mes}`], mes, ano: anoAtual } })
 
     // Anuidades em aberto (qualquer ano)
-    for (const a of anu ?? []) add(a.membro_id, { tipo: 'Anuidade', ref: String(a.ano), valor: +a.valor })
+    for (const a of anu ?? [])
+      add(a.membro_id, { key: `anu-${a.id}`, tipo: 'Anuidade', ref: String(a.ano), valor: +a.valor, dados: { t: 'anuidade', id: a.id } })
 
     // Eventos: participações não pagas (qualquer data)
     for (const p of parts ?? []) {
       const ev = (evs ?? []).find(e => e.id === p.evento_id)
-      if (ev) add(p.membro_id, { tipo: 'Evento', ref: ev.nome, valor: ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor })
+      if (ev) add(p.membro_id, { key: `part-${p.id}`, tipo: 'Evento', ref: ev.nome, valor: ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor,
+        dados: { t: 'participante', id: p.id } })
     }
 
     // Pedidos de listas (ex.: camisetas) não pagos, vinculados a membros
     for (const pd of peds ?? []) {
       const ev = (evs ?? []).find(e => e.id === pd.evento_id)
       const resumo = resumoItens(pd as Pedido)
-      add(pd.membro_id, { tipo: 'Pedido', ref: `${ev?.nome ?? 'Evento'}${resumo ? ` (${resumo})` : ''}`, valor: +pd.valor })
+      add(pd.membro_id, { key: `ped-${pd.id}`, tipo: 'Pedido', ref: `${ev?.nome ?? 'Evento'}${resumo ? ` (${resumo})` : ''}`, valor: +pd.valor,
+        dados: { t: 'pedido', id: pd.id, descricao: `${ev?.nome ?? 'Evento'} — ${pd.nome}${resumo ? ` (${resumo})` : ''}` } })
     }
 
     setMembros(ms ?? []); setPorMembro(mapa); setLoading(false)
@@ -867,6 +881,60 @@ function TabPendencias({ registrar }: { registrar: (fn: () => string[][]) => voi
       return linhas
     })
   }, [membros, porMembro, totalGeral, registrar])
+
+  // Dá baixa numa pendência: mesma lógica das outras abas (marca pago e lança no caixa quando é o caso)
+  async function baixar(membro: Membro, p: Pendencia) {
+    const agora = new Date().toISOString()
+    const hoje = agora.slice(0, 10)
+    const d = p.dados
+    if (d.t === 'mensalidade') {
+      let id = d.id
+      if (id) {
+        await supabase.from('mensalidades').update({ status: 'pago', data_pagamento: agora }).eq('id', id)
+      } else {
+        const { data } = await supabase.from('mensalidades').insert([{
+          membro_id: membro.id, mes: d.mes, ano: d.ano, valor: 20, status: 'pago', data_pagamento: agora,
+        }]).select('id').single()
+        id = data?.id
+      }
+      if (id) {
+        const { data: existe } = await supabase.from('transacoes').select('id').eq('mensalidade_id', id).limit(1)
+        if (!existe?.length) await supabase.from('transacoes').insert([{
+          tipo: 'entrada', valor: 20, data: hoje, categoria: 'Mensalidade',
+          descricao: `Mensalidade ${p.ref} — ${membro.nome}`, membro_id: membro.id, mensalidade_id: id,
+        }])
+      }
+    } else if (d.t === 'anuidade') {
+      await supabase.from('anuidades').update({ status: 'pago', data_pagamento: agora }).eq('id', d.id)
+    } else if (d.t === 'participante') {
+      await supabase.from('evento_participantes').update({ pago: true }).eq('id', d.id)
+    } else {
+      const { data } = await supabase.from('transacoes').insert([{
+        tipo: 'entrada', valor: p.valor, data: hoje, categoria: 'Evento', descricao: d.descricao,
+      }]).select('id').single()
+      await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', d.id)
+    }
+    // remove da lista na tela
+    setPorMembro(prev => ({ ...prev, [membro.id]: (prev[membro.id] ?? []).filter(x => x.key !== p.key) }))
+  }
+
+  async function darBaixa(membro: Membro, p: Pendencia) {
+    if (saving) return
+    setSaving(p.key)
+    await baixar(membro, p)
+    setSaving(null)
+    onMudou()
+  }
+
+  async function darBaixaTudo(membro: Membro) {
+    const pends = porMembro[membro.id] ?? []
+    const total = pends.reduce((s, p) => s + p.valor, 0)
+    if (!confirm(`Dar baixa em todas as ${pends.length} pendências de ${membro.nome} (${fmt(total)})?`)) return
+    setSaving(`tudo-${membro.id}`)
+    for (const p of pends) await baixar(membro, p)
+    setSaving(null)
+    onMudou()
+  }
 
   if (loading) return <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
 
@@ -910,16 +978,30 @@ function TabPendencias({ registrar }: { registrar: (fn: () => string[][]) => voi
                 </button>
                 {exp && (
                   <div className="border-t border-gray-50 px-4 sm:px-6 py-3">
-                    {pends.map((p, j) => (
-                      <div key={j} className="flex items-center justify-between gap-3 py-1.5">
+                    {pends.map(p => (
+                      <div key={p.key} className="flex items-center justify-between gap-3 py-1.5">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0"
                             style={{ background: PEND_CORES[p.tipo].bg, color: PEND_CORES[p.tipo].color }}>{p.tipo}</span>
                           <span className="text-sm text-gray-700 truncate">{p.ref}</span>
                         </div>
-                        <span className="text-sm font-semibold flex-shrink-0" style={{ color: '#dc2626' }}>{fmt(p.valor)}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-sm font-semibold" style={{ color: '#dc2626' }}>{fmt(p.valor)}</span>
+                          <button onClick={() => darBaixa(m, p)} disabled={!!saving}
+                            className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                            style={{ background: '#f0fdf4', color: '#16a34a' }}>
+                            <Check size={12} /> {saving === p.key ? '...' : 'Dar baixa'}
+                          </button>
+                        </div>
                       </div>
                     ))}
+                    <div className="flex justify-end pt-2 mt-1 border-t border-gray-50">
+                      <button onClick={() => darBaixaTudo(m)} disabled={!!saving}
+                        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide px-3.5 py-2 rounded-lg transition-colors disabled:opacity-40 text-white"
+                        style={{ background: '#16a34a' }}>
+                        <Check size={13} /> {saving === `tudo-${m.id}` ? 'Dando baixa...' : `Dar baixa em tudo (${fmt(total)})`}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1094,7 +1176,7 @@ export default function PagamentosPage() {
       {tab === 'mensalidades' && <TabMensalidades mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
       {tab === 'anuidades'    && <TabAnuidades ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
       {tab === 'eventos'      && <TabEventos mes={mesSel} ano={anoSel} registrar={registrar} onMudou={fetchResumoDebounced} />}
-      {tab === 'pendencias'   && <TabPendencias registrar={registrar} />}
+      {tab === 'pendencias'   && <TabPendencias registrar={registrar} onMudou={fetchResumoDebounced} />}
     </div>
   )
 }
