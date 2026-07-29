@@ -58,7 +58,7 @@ export default function Sidebar() {
             <p className="text-white font-black text-base tracking-tight leading-none">DEMOLAY</p>
             <div className="flex items-center gap-1.5 mt-1">
               <div className="h-px" style={{ background: '#c0392b', width: 16 }} />
-              <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: '#555e7a' }}>Tesouraria</p>
+              <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: '#8d96b8' }}>Tesouraria</p>
             </div>
           </div>
         </div>
@@ -69,11 +69,11 @@ export default function Sidebar() {
             const active = href === '/tesouraria' ? pathname === '/tesouraria' : pathname.startsWith(href)
             return (
               <Link key={href} href={href} onClick={() => setOpen(false)}
-                className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-150"
+                className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-150 hover:bg-white/5"
                 style={active ? { background: '#1e2235' } : {}}>
-                <Icon size={16} style={{ color: active ? '#ffffff' : '#3d4460' }} />
+                <Icon size={16} style={{ color: active ? '#ffffff' : '#a3abc7' }} />
                 <span className="text-xs font-bold tracking-widest uppercase"
-                  style={{ color: active ? '#ffffff' : '#3d4460' }}>
+                  style={{ color: active ? '#ffffff' : '#a3abc7' }}>
                   {label}
                 </span>
               </Link>
@@ -86,8 +86,8 @@ export default function Sidebar() {
           <div className="mb-3" style={{ borderTop: '1px solid #1e2235' }} />
           <button onClick={handleLogout}
             className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl w-full transition-all hover:bg-white/5">
-            <LogOut size={14} style={{ color: '#3d4460' }} />
-            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#3d4460' }}>Sair</span>
+            <LogOut size={14} style={{ color: '#a3abc7' }} />
+            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#a3abc7' }}>Sair</span>
           </button>
         </div>
       </aside>
