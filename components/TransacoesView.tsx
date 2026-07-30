@@ -8,6 +8,11 @@ import { exportarExcel } from '@/lib/excel'
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const CATS = ['Mensalidade','Anuidade','Evento','Doação','Material','Alimentação','Transporte','Outro']
 
+// Taxa cobrada em cada transferência de despesa (lançada como saída junto com a despesa)
+const TAXA_TRANSF = 0.0089
+const calcTaxa = (v: number) => Math.round(v * TAXA_TRANSF * 100) / 100
+const taxaDesc = (desc: string) => `Taxa 0,89% — ${desc}`
+
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
@@ -57,9 +62,27 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
       categoria: form.categoria || null, valor: +form.valor, data: form.data,
     }
     if (editId) {
+      const antigo = rows.find(r => r.id === editId)
       await supabase.from('transacoes').update(payload).eq('id', editId)
+      // mantém a taxa da despesa em sincronia, se existir
+      if (!isE && antigo && !String(antigo.descricao ?? '').startsWith('Taxa 0,89%')) {
+        const { data: tx } = await supabase.from('transacoes').select('id')
+          .eq('tipo', 'saida').eq('descricao', taxaDesc(antigo.descricao)).eq('data', String(antigo.data ?? '').slice(0, 10)).limit(1)
+        if (tx?.length) await supabase.from('transacoes').update({
+          descricao: taxaDesc(form.descricao), origem_destino: form.origem_destino,
+          valor: calcTaxa(+form.valor), data: form.data,
+        }).eq('id', tx[0].id)
+      }
     } else {
       await supabase.from('transacoes').insert([payload])
+      // cada transferência de despesa gera a taxa de 0,89% como saída
+      const taxa = calcTaxa(+form.valor)
+      if (!isE && taxa >= 0.01) {
+        await supabase.from('transacoes').insert([{
+          tipo: 'saida', descricao: taxaDesc(form.descricao), origem_destino: form.origem_destino,
+          categoria: 'Outro', valor: taxa, data: form.data,
+        }])
+      }
     }
     resetForm()
     setShowForm(false)
@@ -79,6 +102,12 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
   async function excluir(r: any) {
     if (!confirm(`Excluir "${r.descricao}" (${fmt(+r.valor)})?`)) return
     await supabase.from('transacoes').delete().eq('id', r.id)
+    // exclui também a taxa lançada junto com a despesa, se existir
+    if (!isE && !String(r.descricao ?? '').startsWith('Taxa 0,89%')) {
+      const { data: tx } = await supabase.from('transacoes').select('id')
+        .eq('tipo', 'saida').eq('descricao', taxaDesc(r.descricao)).eq('data', String(r.data ?? '').slice(0, 10)).limit(1)
+      if (tx?.length) await supabase.from('transacoes').delete().eq('id', tx[0].id)
+    }
     if (editId === r.id) { resetForm(); setShowForm(false) }
     load()
   }
@@ -177,6 +206,13 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
               <input required type="date" value={form.data}
                 onChange={e => setForm({...form, data: e.target.value})} className={inp} />
             </div>
+            {!isE && +form.valor > 0 && (
+              <p className="text-xs text-gray-400 mt-3">
+                {editId ? 'Taxa de transferência (0,89%) ajustada para: ' : '+ Taxa de transferência (0,89%) lançada automaticamente: '}
+                <b style={{ color: cor }}>{fmt(calcTaxa(+form.valor))}</b>
+                {' '}· total a sair do saldo: <b style={{ color: cor }}>{fmt(+form.valor + calcTaxa(+form.valor))}</b>
+              </p>
+            )}
             <div className="flex gap-2 mt-4">
               <button type="submit" className="text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90"
                 style={{ background: cor }}>{editId ? 'Salvar alterações' : 'Salvar'}</button>
