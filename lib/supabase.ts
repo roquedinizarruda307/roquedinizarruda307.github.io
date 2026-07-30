@@ -31,7 +31,7 @@ function bloqueado(): any {
   return proxy
 }
 
-export const supabase: any = new Proxy(cliente, {
+export const supabase = new Proxy(cliente, {
   get(alvo, prop) {
     if (prop === 'from') {
       return (tabela: string) => {
@@ -50,7 +50,7 @@ export const supabase: any = new Proxy(cliente, {
     const v = (alvo as any)[prop]
     return typeof v === 'function' ? v.bind(alvo) : v
   },
-})
+}) as typeof cliente
 
 export type Membro = {
   id: string
