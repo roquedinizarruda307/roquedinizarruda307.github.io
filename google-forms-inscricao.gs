@@ -1,100 +1,141 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  INSCRIÇÕES DO GOOGLE FORMS → SISTEMA DA TESOURARIA (DeMolay RDA 307)
 //
-//  O que faz: toda vez que alguém responde o formulário, a pessoa aparece
-//  automaticamente como inscrita no evento, na aba PGTO → Eventos do site.
+//  CÓPIA DE SEGURANÇA da versão instalada no Apps Script da conta
+//  trabalho@vecchihumberto.com — projeto "Inscrições Olimpíadas → Tesouraria".
+//  Formulário conectado: Olimpíadas da Ordem Demolay - 2026
 //
-//  COMO INSTALAR (uma vez só):
-//  1. Abra o seu formulário no Google Forms (modo de edição)
-//  2. Clique nos 3 pontinhos (⋮) no canto superior direito → "Editor de script"
-//  3. Apague tudo que aparecer lá e cole ESTE arquivo inteiro
-//  4. Clique no disquete (Salvar)
-//  5. No menu de cima, onde diz "aoEnviarResposta", escolha "configurar"
-//     e clique em "Executar" (▶). O Google vai pedir permissão — autorize.
-//  6. Pronto! Faça um teste respondendo o formulário.
+//  O que faz: cada resposta vira um inscrito PAGO no evento (tipo "inscricao",
+//  que abre o painel de inscrições no site), com o valor do lote lançado no
+//  caixa e categoria (Você é:), capítulo, ID e telefone guardados.
 //
-//  O evento é criado sozinho no sistema com o MESMO NOME do formulário
-//  (tipo "Lista de pedidos"). Se quiser outro nome, preencha EVENTO_NOME abaixo.
+//  Para reinstalar: cole no Apps Script e rode "configurar" uma vez.
+//  Para importar respostas antigas sem duplicar: rode "importarAntigas".
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Deixe '' para usar o nome do formulário como nome do evento
-const EVENTO_NOME = '';
+const FORM_ID = '1kD2k6-Aw0tuvfDPIcuU-0fIG3coFEd83pHmnzVkRkEs';
+const EVENTO_NOME = '';   // '' = usa o nome do formulário
 
-// Conexão com o banco do site (não precisa mexer)
+// Lotes da inscrição (até a data → valor)
+const LOTES = [
+  { ate: '2026-08-23', valor: 175 },   // 1º lote: 28/07 a 23/08
+  { ate: '2026-09-27', valor: 200 },   // 2º lote: 24/08 a 27/09
+  { ate: '2026-10-06', valor: 225 },   // 3º lote: 28/09 a 06/10
+];
+
 const SUPABASE_URL = 'https://skalkpkolumpgkjggtwy.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrYWxrcGtvbHVtcGdramdndHd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NTkzMDEsImV4cCI6MjA5NjUzNTMwMX0.goxiFpqK8hbmeEglq2z4dJV5iGJbWahbqVXIe2wzBr8';
 
-// ─── Execute esta função UMA VEZ para ligar a automação ─────────────────────
+// ─── Execute UMA VEZ para ligar a automação ─────────────────────────────────
 function configurar() {
-  // remove gatilhos antigos deste script (evita duplicar)
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
-  // liga o gatilho: a cada resposta enviada, roda aoEnviarResposta
   ScriptApp.newTrigger('aoEnviarResposta')
-    .forForm(FormApp.getActiveForm())
+    .forForm(FormApp.openById(FORM_ID))
     .onFormSubmit()
     .create();
-  // garante que o evento já existe no sistema
   const ev = garantirEvento();
   Logger.log('Tudo pronto! As inscrições vão cair no evento: ' + ev.nome);
 }
 
-// ─── Roda sozinha a cada resposta do formulário ─────────────────────────────
-function aoEnviarResposta(e) {
-  const respostas = e.response.getItemResponses();
+// ─── Valor conforme o lote (pela data da resposta) ──────────────────────────
+function valorDoLote(quando) {
+  const d = Utilities.formatDate(quando, 'America/Sao_Paulo', 'yyyy-MM-dd');
+  for (let i = 0; i < LOTES.length; i++) {
+    if (d <= LOTES[i].ate) return LOTES[i].valor;
+  }
+  return LOTES[LOTES.length - 1].valor;
+}
 
-  let nome = '';
-  let telefone = '';
+// ─── Roda sozinha a cada resposta ───────────────────────────────────────────
+function aoEnviarResposta(e) {
+  lancarInscricao(e.response);
+}
+
+// ─── Lança uma resposta: inscrito pago + entrada no caixa ───────────────────
+function lancarInscricao(resp) {
+  let nome = '', telefone = '', categoria = '', idDm = '', capitulo = '';
   const outras = [];
 
-  respostas.forEach(function (r) {
+  resp.getItemResponses().forEach(function (r) {
     const pergunta = String(r.getItem().getTitle()).toLowerCase();
     const valor = String(r.getResponse());
     if (!valor) return;
-    if (!nome && pergunta.indexOf('nome') !== -1) {
-      nome = valor;
-    } else if (!telefone && (pergunta.indexOf('telefone') !== -1 || pergunta.indexOf('celular') !== -1 || pergunta.indexOf('whats') !== -1 || pergunta.indexOf('contato') !== -1)) {
-      telefone = valor;
-    } else {
-      outras.push(valor);
-    }
+    if (!categoria && pergunta.indexOf('você é') !== -1) categoria = valor;
+    else if (!capitulo && (pergunta.indexOf('capítulo') !== -1 || pergunta.indexOf('capitulo') !== -1)) capitulo = valor;
+    else if (!idDm && pergunta.indexOf('seu id') !== -1) idDm = valor;
+    else if (!telefone && (pergunta.indexOf('telefone') !== -1 || pergunta.indexOf('celular') !== -1 || pergunta.indexOf('whats') !== -1 || pergunta.indexOf('contato') !== -1)) telefone = valor;
+    else if (!nome && pergunta.indexOf('nome') !== -1) nome = valor;
+    else outras.push(valor);
   });
 
-  // se o formulário não tem pergunta com "nome", usa a primeira resposta
   if (!nome) nome = outras.shift() || 'Inscrito sem nome';
+  nome = nome.toUpperCase();
 
   const evento = garantirEvento();
+  const quando = resp.getTimestamp() || new Date();
+  const valor = valorDoLote(quando);
+  const dataStr = Utilities.formatDate(quando, 'America/Sao_Paulo', 'yyyy-MM-dd');
 
+  // 1) entrada no caixa
+  const tx = supabase('POST', '/rest/v1/transacoes', [{
+    tipo: 'entrada', valor: valor, data: dataStr, categoria: 'Evento',
+    descricao: evento.nome + ' — ' + nome + ' (inscrição)',
+  }]);
+
+  // 2) inscrito pago, com categoria/capítulo/ID/telefone
   supabase('POST', '/rest/v1/evento_pedidos', [{
-    evento_id: evento.id,
-    nome: nome.toUpperCase(),
-    membro_id: null,
-    item_id: null,
-    item_nome: null,
-    qtd: 1,
-    valor: 0,
-    numero: telefone || null,   // telefone aparece no site como "Nº ..."
-    pago: false,
-    retirado: false,
+    evento_id: evento.id, nome: nome, membro_id: null, item_id: null,
+    item_nome: categoria ? categoria.toUpperCase() : null,   // categoria (Você é:)
+    qtd: 1, valor: valor,
+    numero: telefone || null,                                 // telefone
+    tamanho: idDm || null,                                    // ID DeMolay
+    nome_camisa: capitulo || null,                            // capítulo
+    pago: true, retirado: false, transacao_id: tx && tx[0] ? tx[0].id : null,
   }]);
 }
 
-// ─── Busca o evento no sistema; se não existir, cria (tipo lista) ───────────
-function garantirEvento() {
-  const nomeEvento = EVENTO_NOME || FormApp.getActiveForm().getTitle() || 'Inscrições';
+// ─── Importa respostas antigas (não duplica) ────────────────────────────────
+function importarAntigas() {
+  const form = FormApp.openById(FORM_ID);
+  const evento = garantirEvento();
+  let importadas = 0, puladas = 0;
 
-  // já procurado antes? usa o que está guardado
+  form.getResponses().forEach(function (resp) {
+    let nome = '';
+    resp.getItemResponses().forEach(function (r) {
+      const pergunta = String(r.getItem().getTitle()).toLowerCase();
+      const valor = String(r.getResponse());
+      if (!nome && valor && pergunta.indexOf('capítulo') === -1 && pergunta.indexOf('capitulo') === -1 && pergunta.indexOf('nome') !== -1) nome = valor;
+    });
+    if (!nome) return;
+    nome = nome.toUpperCase();
+
+    const existe = supabase('GET', '/rest/v1/evento_pedidos?select=id&evento_id=eq.' + evento.id + '&nome=eq.' + encodeURIComponent(nome));
+    if (existe && existe.length) { puladas++; return; }
+
+    lancarInscricao(resp);
+    importadas++;
+  });
+
+  Logger.log('Importadas: ' + importadas + ' | já existiam: ' + puladas);
+}
+
+// ─── Evento no sistema (tipo "inscricao" = painel de inscrições no site) ────
+function garantirEvento() {
+  const nomeEvento = EVENTO_NOME || FormApp.openById(FORM_ID).getTitle() || 'Inscrições';
+
   const props = PropertiesService.getScriptProperties();
   const salvo = props.getProperty('evento_' + nomeEvento);
   if (salvo) return JSON.parse(salvo);
 
-  let lista = supabase('GET', '/rest/v1/pagamentos_eventos?select=id,nome&tipo=eq.lista&nome=eq.' + encodeURIComponent(nomeEvento));
+  let lista = supabase('GET', '/rest/v1/pagamentos_eventos?select=id,nome&nome=eq.' + encodeURIComponent(nomeEvento));
   let evento = lista && lista.length ? lista[0] : null;
 
   if (!evento) {
     const hoje = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
     const criado = supabase('POST', '/rest/v1/pagamentos_eventos', [{
       nome: nomeEvento, data: hoje, valor: 0, descricao: 'Inscrições via Google Forms',
-      status: 'pendente', tipo: 'lista', qtd_ingressos: 1,
+      status: 'pendente', tipo: 'inscricao', qtd_ingressos: 1,
     }]);
     evento = criado[0];
   }

@@ -555,6 +555,194 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
   )
 }
 
+// ─── Dashboard de Inscrições (eventos vindos do formulário) ───────────────────
+const CAT_CORES: Record<string, { bg: string; color: string }> = {
+  'DEMOLAY ATIVO':  { bg: '#eef2ff', color: '#4338ca' },
+  'SÊNIOR DEMOLAY': { bg: '#eff6ff', color: '#1d4ed8' },
+  'MAÇOM':          { bg: '#fefce8', color: '#a16207' },
+  'ACOMPANHANTE':   { bg: '#fdf2f8', color: '#be185d' },
+}
+const catCor = (c: string) => CAT_CORES[c] ?? { bg: '#f3f4f6', color: '#6b7280' }
+const TAXA_EVENTO = (v: number) => Math.round(v * 1.0089 * 100) / 100
+
+function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () => void; onExcluir: () => void }) {
+  const [inscritos, setInscritos] = useState<Pedido[]>([])
+  const [txs, setTxs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busca, setBusca] = useState('')
+  const [dDesc, setDDesc] = useState('')
+  const [dValor, setDValor] = useState('')
+
+  const fetchTudo = useCallback(async () => {
+    setLoading(true)
+    const [{ data: peds }, { data: t }] = await Promise.all([
+      supabase.from('evento_pedidos').select('*').eq('evento_id', ev.id).order('nome'),
+      supabase.from('transacoes').select('*').ilike('descricao', `${ev.nome}%`).order('data', { ascending: false }),
+    ])
+    setInscritos((peds ?? []) as Pedido[]); setTxs(t ?? []); setLoading(false)
+  }, [ev.id, ev.nome])
+
+  useEffect(() => { fetchTudo() }, [fetchTudo])
+
+  const receita = txs.filter(t => t.tipo === 'entrada').reduce((s, t) => s + +t.valor, 0)
+  const despesas = txs.filter(t => t.tipo === 'saida')
+  const despesa = despesas.reduce((s, t) => s + +t.valor, 0)
+
+  const categorias = [...new Set(inscritos.map(p => (p.item_nome ?? 'SEM CATEGORIA').toUpperCase()))]
+    .map(c => ({ c, n: inscritos.filter(p => (p.item_nome ?? 'SEM CATEGORIA').toUpperCase() === c).length }))
+    .sort((a, b) => b.n - a.n)
+
+  const filtrados = inscritos.filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase()))
+
+  async function togglePago(p: Pedido) {
+    const novo = !p.pago
+    setInscritos(prev => prev.map(x => x.id === p.id ? { ...x, pago: novo } : x))
+    if (novo) {
+      const { data } = await supabase.from('transacoes').insert([{
+        tipo: 'entrada', valor: p.valor, data: new Date().toISOString().slice(0, 10),
+        categoria: 'Evento', descricao: `${ev.nome} — ${p.nome} (inscrição)`,
+      }]).select('id').single()
+      await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', p.id)
+    } else {
+      if (p.transacao_id) await supabase.from('transacoes').delete().eq('id', p.transacao_id)
+      await supabase.from('evento_pedidos').update({ pago: false, transacao_id: null }).eq('id', p.id)
+    }
+    fetchTudo(); onMudou()
+  }
+
+  async function delInscrito(p: Pedido) {
+    if (!confirm(`Excluir a inscrição de ${p.nome}?${p.pago ? ' O valor sai do caixa também.' : ''}`)) return
+    if (p.transacao_id) await supabase.from('transacoes').delete().eq('id', p.transacao_id)
+    await supabase.from('evento_pedidos').delete().eq('id', p.id)
+    fetchTudo(); onMudou()
+  }
+
+  // Despesa do evento: sai do caixa com a taxa de transferência (0,89%) embutida
+  async function addDespesa(e: React.FormEvent) {
+    e.preventDefault()
+    if (!dDesc.trim() || !+dValor) return
+    await supabase.from('transacoes').insert([{
+      tipo: 'saida', valor: TAXA_EVENTO(+dValor), data: new Date().toISOString().slice(0, 10),
+      categoria: 'Evento', descricao: `${ev.nome} — ${dDesc.trim()}`,
+    }])
+    setDDesc(''); setDValor(''); fetchTudo(); onMudou()
+  }
+
+  async function delDespesa(t: any) {
+    if (!confirm(`Excluir a despesa "${t.descricao}" (${fmt(+t.valor)})?`)) return
+    await supabase.from('transacoes').delete().eq('id', t.id)
+    fetchTudo(); onMudou()
+  }
+
+  if (loading) return <div className="py-6 text-center text-sm text-gray-300">Carregando...</div>
+
+  const cards = [
+    { label: 'Inscritos', valor: String(inscritos.length), cor: '#111827' },
+    { label: 'Receita', valor: fmt(receita), cor: '#16a34a' },
+    { label: 'Despesas', valor: fmt(despesa), cor: '#dc2626' },
+    { label: 'Saldo do evento', valor: fmt(receita - despesa), cor: receita - despesa >= 0 ? '#16a34a' : '#dc2626' },
+  ]
+
+  return (
+    <div className="border-t border-gray-50 px-4 sm:px-6 py-5 space-y-5">
+      {/* Resumo do evento */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {cards.map(c => (
+          <div key={c.label} className="bg-gray-50 rounded-xl px-4 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">{c.label}</p>
+            <p className="text-lg font-black" style={{ color: c.cor }}>{c.valor}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Contagem por categoria */}
+      {categorias.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {categorias.map(({ c, n }) => (
+            <span key={c} className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-lg"
+              style={{ background: catCor(c).bg, color: catCor(c).color }}>
+              {c}: {n}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Inscritos */}
+      <div>
+        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Inscritos ({inscritos.length})</p>
+          <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome…"
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white w-full sm:w-56" />
+        </div>
+        <div>
+          {filtrados.length === 0 && <p className="text-sm text-gray-300 py-2">Nenhum inscrito{busca ? ' encontrado' : ' ainda'}.</p>}
+          {filtrados.map(p => {
+            const cat = (p.item_nome ?? '').toUpperCase()
+            return (
+              <div key={p.id} className="flex items-center justify-between gap-3 flex-wrap py-2.5 border-b border-gray-50 last:border-0">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 flex items-center gap-2 flex-wrap">
+                    {p.nome}
+                    {cat && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: catCor(cat).bg, color: catCor(cat).color }}>{cat}</span>}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    {p.nome_camisa && <span>{p.nome_camisa}</span>}
+                    {p.nome_camisa && p.tamanho ? ' · ' : ''}
+                    {p.tamanho && <span>ID {p.tamanho}</span>}
+                    {(p.nome_camisa || p.tamanho) && p.numero ? ' · ' : ''}
+                    {p.numero && <span>{p.numero}</span>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-sm font-semibold" style={{ color: p.pago ? '#16a34a' : '#dc2626' }}>{fmt(+p.valor)}</span>
+                  <button onClick={() => togglePago(p)}
+                    className="text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg"
+                    style={p.pago ? { background: '#f0fdf4', color: '#16a34a' } : { background: '#fef2f2', color: '#dc2626' }}>
+                    {p.pago ? 'Pago' : 'Não pago'}
+                  </button>
+                  <button onClick={() => delInscrito(p)} className="text-gray-300 hover:text-red-500 p-1"><X size={14} /></button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Despesas do evento */}
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-2">Despesas do evento ({despesas.length})</p>
+        <div className="mb-3">
+          {despesas.length === 0 && <p className="text-sm text-gray-300">Nenhuma despesa lançada.</p>}
+          {despesas.map(t => (
+            <div key={t.id} className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
+              <div className="min-w-0">
+                <p className="text-sm text-gray-800 truncate">{String(t.descricao).replace(`${ev.nome} — `, '')}</p>
+                <p className="text-[11px] text-gray-400">{new Date(t.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-sm font-semibold" style={{ color: '#dc2626' }}>-{fmt(+t.valor)}</span>
+                <button onClick={() => delDespesa(t)} className="text-gray-300 hover:text-red-500 p-1"><X size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={addDespesa} className="flex flex-col sm:flex-row gap-2">
+          <input value={dDesc} onChange={e => setDDesc(e.target.value)} placeholder="Despesa do evento (ex.: Ônibus, Alimentação…)" className={inp + ' flex-1'} />
+          <div className="flex gap-2">
+            <input value={dValor} onChange={e => setDValor(e.target.value)} type="number" step="0.01" placeholder="Valor" className={inp + ' flex-1 sm:w-32'} />
+            <button className="text-white text-sm font-medium px-3.5 py-2 rounded-lg whitespace-nowrap flex-shrink-0" style={{ background: '#c0392b' }}>+ Despesa</button>
+          </div>
+        </form>
+        {+dValor > 0 && (
+          <p className="text-xs text-gray-400 mt-2">
+            Com a taxa de transferência (0,89%), sai do saldo: <b style={{ color: '#c0392b' }}>{fmt(TAXA_EVENTO(+dValor))}</b>
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Tab: Eventos ─────────────────────────────────────────────────────────────
 type Participante = { id: string; evento_id: string; membro_id: string; qtd: number; pago: boolean; ingresso_retirado: boolean }
 
@@ -574,8 +762,8 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
     const [{ data: evsMes }, { data: evsLista }, { data: ms }] = await Promise.all([
       // eventos do mês (simples/ingresso) + listas do mês
       supabase.from('pagamentos_eventos').select('*').gte('data', `${ano}-${m}-01`).lte('data', `${ano}-${m}-31`).order('data'),
-      // listas de pedidos aparecem sempre (não são de um mês específico)
-      supabase.from('pagamentos_eventos').select('*').eq('tipo', 'lista').order('created_at', { ascending: false }),
+      // listas de pedidos e inscrições aparecem sempre (não são de um mês específico)
+      supabase.from('pagamentos_eventos').select('*').in('tipo', ['lista', 'inscricao']).order('created_at', { ascending: false }),
       supabase.from('membros').select('*').order('nome'),
     ])
     // junta sem duplicar
@@ -728,12 +916,14 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
               className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left cursor-pointer">
               <div className="flex items-center gap-3 min-w-0">
                 {ev.tipo === 'ingresso' && <Ticket size={16} className="text-gray-400 flex-shrink-0" />}
-                {ev.tipo === 'lista' && <Ticket size={16} className="text-gray-400 flex-shrink-0" />}
+                {(ev.tipo === 'lista' || ev.tipo === 'inscricao') && <Ticket size={16} className="text-gray-400 flex-shrink-0" />}
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-gray-800 truncate">{ev.nome}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {new Date(ev.data + 'T00:00:00').toLocaleDateString('pt-BR')}
-                    {ev.tipo === 'lista'
+                    {ev.tipo === 'inscricao'
+                      ? ' · Inscrições via formulário'
+                      : ev.tipo === 'lista'
                       ? ' · Lista de pedidos'
                       : ev.tipo === 'ingresso'
                         ? ` · ${fmt(+ev.valor)}/ingresso · ${ps.length} participante(s)`
@@ -742,7 +932,7 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
                 </div>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
-                {ev.tipo !== 'lista' && (pendente > 0
+                {ev.tipo !== 'lista' && ev.tipo !== 'inscricao' && (pendente > 0
                   ? <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#fef2f2', color: '#dc2626' }}>{fmt(pendente)} a receber</span>
                   : ps.length > 0 && <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#f0fdf4', color: '#16a34a' }}>Quitado</span>)}
                 <button onClick={e => { e.stopPropagation(); removerEvento(ev) }} title="Excluir evento"
@@ -754,8 +944,9 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
             </div>
 
             {/* Corpo: lista de pedidos OU participantes */}
+            {aberto && ev.tipo === 'inscricao' && <DashboardInscricoes ev={ev} onMudou={onMudou} onExcluir={() => removerEvento(ev)} />}
             {aberto && ev.tipo === 'lista' && <ListaPedidos ev={ev} membros={membros} onMudou={onMudou} onExcluir={() => removerEvento(ev)} />}
-            {aberto && ev.tipo !== 'lista' && (
+            {aberto && ev.tipo !== 'lista' && ev.tipo !== 'inscricao' && (
               <div className="border-t border-gray-50 px-4 sm:px-6 py-4 space-y-2">
                 {ps.length === 0 && <p className="text-sm text-gray-300 py-2 text-center">Nenhum participante ainda.</p>}
 
