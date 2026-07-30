@@ -226,7 +226,7 @@ export default function AjustesPage() {
           <div>
             <h2 className="text-base font-black text-gray-900">Contas e níveis</h2>
             <p className="text-xs text-gray-400">
-              <b>Dona</b>: acesso total, inclusive Ajustes · <b>Admin</b>: edita tudo, menos Ajustes · <b>Escrivão</b>: vê tudo, edita só a aba Escrivão.
+              <b>Dona</b>: acesso total, inclusive Ajustes · <b>Admin</b>: edita tudo, menos Ajustes · <b>Escrivão</b>: vê tudo, edita só Escrivão e Membros.
             </p>
           </div>
         </div>

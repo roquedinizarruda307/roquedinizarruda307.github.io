@@ -6,19 +6,21 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const cliente = createClient(supabaseUrl, supabaseAnonKey)
 
 // ─── Modo consulta (escrivão) ─────────────────────────────────────────────────
-// O escrivão vê todas as telas, mas só grava alterações na aba Escrivão.
-// Qualquer insert/update/delete fora dela é bloqueado aqui, antes do banco.
+// O escrivão vê todas as telas, mas só grava alterações nas abas Escrivão e
+// Membros. Qualquer insert/update/delete fora delas é bloqueado aqui, antes do banco.
 let modoConsulta = false
 export const setModoConsulta = (v: boolean) => { modoConsulta = v }
 
+const ABAS_LIVRES_ESCRIVAO = ['/tesouraria/escrivao', '/tesouraria/membros']
 const escritaBloqueada = () =>
-  modoConsulta && typeof window !== 'undefined' && !window.location.pathname.startsWith('/tesouraria/escrivao')
+  modoConsulta && typeof window !== 'undefined' &&
+  !ABAS_LIVRES_ESCRIVAO.some(r => window.location.pathname.startsWith(r))
 
 let ultimoAviso = 0
 function bloqueado(): any {
   if (Date.now() - ultimoAviso > 2000) {
     ultimoAviso = Date.now()
-    alert('Modo consulta: você pode ver tudo, mas só editar a aba Escrivão.')
+    alert('Modo consulta: você pode ver tudo, mas só editar as abas Escrivão e Membros.')
   }
   // objeto encadeável: aceita qualquer chamada e, ao ser aguardado, devolve erro
   const proxy: any = new Proxy(function () {}, {
