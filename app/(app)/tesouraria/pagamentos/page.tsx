@@ -86,7 +86,7 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
     const hoje = new Date().toISOString().slice(0, 10)
     await supabase.from('transacoes').insert([{
       tipo: 'entrada',
-      valor: liquidoEntrada(20),   // entra líquido, já descontada a taxa de 0,71%
+      valor: liquidoEntrada(20),   // entra líquido, já descontada a taxa de transferência
       data: hoje,
       categoria: 'Mensalidade',
       descricao: `Mensalidade ${MESES_C[mes - 1]}/${ano} — ${membro.nome}`,
@@ -617,7 +617,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
     fetchTudo(); onMudou()
   }
 
-  // Despesa do evento: sai do caixa com a taxa de transferência (1,34%) embutida
+  // Despesa do evento: sai do caixa com a taxa de transferência embutida (0,89%, máx. R$ 8,50)
   async function addDespesa(e: React.FormEvent) {
     e.preventDefault()
     if (!dDesc.trim() || !+dValor) return
@@ -735,7 +735,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
         </form>
         {+dValor > 0 && (
           <p className="text-xs text-gray-400 mt-2">
-            Com a taxa de transferência (1,34%), sai do saldo: <b style={{ color: '#c0392b' }}>{fmt(comTaxaSaida(+dValor))}</b>
+            Com a taxa de transferência (0,89%, máx. R$ 8,50), sai do saldo: <b style={{ color: '#c0392b' }}>{fmt(comTaxaSaida(+dValor))}</b>
           </p>
         )}
       </div>

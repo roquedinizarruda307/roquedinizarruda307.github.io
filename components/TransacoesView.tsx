@@ -55,7 +55,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
     e.preventDefault()
     const payload = {
       tipo, descricao: form.descricao, origem_destino: form.origem_destino,
-      // entrada: desconta 0,71% · despesa: soma 1,34% (taxas de transferência)
+      // taxa de transferência: 0,89% (máx. R$ 8,50) — desconta na entrada, soma na saída
       categoria: form.categoria || null, valor: isE ? liquidoEntrada(+form.valor) : comTaxaSaida(+form.valor), data: form.data,
     }
     if (editId) {
@@ -183,9 +183,9 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
             {+form.valor > 0 && (
               <p className="text-xs text-gray-400 mt-3">
                 {isE
-                  ? <>Taxa sobre receita (0,71%): <b style={{ color: cor }}>−{fmt(+form.valor - liquidoEntrada(+form.valor))}</b>
+                  ? <>Taxa (0,89%, máx. R$ 8,50): <b style={{ color: cor }}>−{fmt(+form.valor - liquidoEntrada(+form.valor))}</b>
                       {' '}· entra no caixa: <b style={{ color: cor }}>{fmt(liquidoEntrada(+form.valor))}</b></>
-                  : <>Taxa sobre despesa (1,34%): <b style={{ color: cor }}>+{fmt(comTaxaSaida(+form.valor) - +form.valor)}</b>
+                  : <>Taxa (0,89%, máx. R$ 8,50): <b style={{ color: cor }}>+{fmt(comTaxaSaida(+form.valor) - +form.valor)}</b>
                       {' '}· sai do saldo: <b style={{ color: cor }}>{fmt(comTaxaSaida(+form.valor))}</b></>}
               </p>
             )}
