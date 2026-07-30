@@ -17,6 +17,21 @@ function inicial(nome: string) {
   return (nome?.trim()?.[0] ?? '?').toUpperCase()
 }
 
+// Regras de cobrança: membro só é cobrado a partir do mês/ano em que entrou;
+// inativo não gera dívidas novas (as já registradas continuam valendo)
+function entrouAte(m: Membro, mes: number, ano: number) {
+  if (!m.data_entrada) return true
+  const y = +String(m.data_entrada).slice(0, 4), mo = +String(m.data_entrada).slice(5, 7)
+  if (!y || !mo) return true
+  return y < ano || (y === ano && mo <= mes)
+}
+
+function entrouAteAno(m: Membro, ano: number) {
+  if (!m.data_entrada) return true
+  const y = +String(m.data_entrada).slice(0, 4)
+  return !y || y <= ano
+}
+
 // ─── Tab: Mensalidades ────────────────────────────────────────────────────────
 function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void; onMudou: () => void }) {
   const [membros, setMembros] = useState<Membro[]>([])
@@ -46,12 +61,15 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
 
   useEffect(() => { fetchDados() }, [fetchDados])
 
+  // Quem aparece no mês: quem já tem registro nele, ou está ativo e já tinha entrado
+  const visiveis = membros.filter(m => mapa[m.id] || (m.status !== 'inativo' && entrouAte(m, mes, ano)))
+
   // disponibiliza dados pro relatório
   useEffect(() => {
     registrar(() => {
       const label = { pago: 'Pago', nao_pago: 'Não pago', isento: 'Isento' }
       const linhas: string[][] = [['Membro', 'Status', `Mensalidade ${MESES_C[mes-1]}/${ano}`]]
-      for (const m of membros) {
+      for (const m of visiveis) {
         const st = mapa[m.id]?.status ?? 'nao_pago'
         linhas.push([m.nome, label[st], st === 'nao_pago' ? 'R$ 20,00' : '—'])
       }
@@ -111,7 +129,7 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
   }
 
   if (loading) return <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
-  if (membros.length === 0) return <div className="py-12 text-center text-sm text-gray-300">Nenhum membro cadastrado.</div>
+  if (visiveis.length === 0) return <div className="py-12 text-center text-sm text-gray-300">Nenhum membro a cobrar neste mês.</div>
 
   const opcoes = [
     { s: 'pago'     as StatusMens, label: 'Paga',     bg: '#f0fdf4', color: '#16a34a' },
@@ -121,12 +139,12 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      {membros.map((membro, i) => {
+      {visiveis.map((membro, i) => {
         const status: StatusMens = mapa[membro.id]?.status ?? 'nao_pago'
         const isSaving = saving === membro.id
         return (
           <div key={membro.id}
-            className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors ${i < visiveis.length - 1 ? 'border-b border-gray-50' : ''}`}>
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm"
                 style={{ background: '#f3f4f6', color: '#6b7280' }}>
@@ -182,10 +200,13 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
     s === 'atrasado' ? { bg: '#fef2f2', color: '#dc2626', label: 'Atrasado' } :
                        { bg: '#fefce8', color: '#a16207', label: 'Pendente' }
 
+  // Quem aparece no ano: quem já tem registro nele, ou está ativo e já tinha entrado
+  const visiveis = membros.filter(m => mapa[m.id] || (m.status !== 'inativo' && entrouAteAno(m, ano)))
+
   useEffect(() => {
     registrar(() => {
       const linhas: string[][] = [['Membro', 'Status', `Anuidade ${ano}`]]
-      for (const m of membros) {
+      for (const m of visiveis) {
         const st = mapa[m.id]?.status ?? 'pendente'
         linhas.push([m.nome, stStyle(st).label, st !== 'pago' ? 'R$ 120,00' : '—'])
       }
@@ -211,16 +232,16 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
   }
 
   if (loading) return <div className="py-12 text-center text-sm text-gray-300">Carregando...</div>
-  if (membros.length === 0) return <div className="py-12 text-center text-sm text-gray-300">Nenhum membro cadastrado.</div>
+  if (visiveis.length === 0) return <div className="py-12 text-center text-sm text-gray-300">Nenhum membro a cobrar neste ano.</div>
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      {membros.map((m, i) => {
+      {visiveis.map((m, i) => {
         const status = mapa[m.id]?.status ?? 'pendente'
         const st = stStyle(status)
         return (
           <div key={m.id}
-            className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors ${i < membros.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors ${i < visiveis.length - 1 ? 'border-b border-gray-50' : ''}`}>
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm"
                 style={{ background: '#f3f4f6', color: '#6b7280' }}>{inicial(m.nome)}</div>
@@ -841,10 +862,14 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
     const regMens: Record<string, string> = {}
     for (const r of mens ?? []) regMens[`${r.membro_id}-${r.mes}`] = r.id
     for (const m of ms ?? [])
-      for (let mes = 1; mes <= mesAtual; mes++)
-        if (!quitadas.has(`${m.id}-${mes}`))
-          add(m.id, { key: `mens-${m.id}-${mes}`, tipo: 'Mensalidade', ref: `${MESES_C[mes - 1]}/${anoAtual}`, valor: 20,
-            dados: { t: 'mensalidade', id: regMens[`${m.id}-${mes}`], mes, ano: anoAtual } })
+      for (let mes = 1; mes <= mesAtual; mes++) {
+        if (quitadas.has(`${m.id}-${mes}`)) continue
+        // sem registro no mês, só cobra quem estava ativo e já tinha entrado
+        const temRegistro = regMens[`${m.id}-${mes}`] !== undefined
+        if (!temRegistro && (m.status === 'inativo' || !entrouAte(m, mes, anoAtual))) continue
+        add(m.id, { key: `mens-${m.id}-${mes}`, tipo: 'Mensalidade', ref: `${MESES_C[mes - 1]}/${anoAtual}`, valor: 20,
+          dados: { t: 'mensalidade', id: regMens[`${m.id}-${mes}`], mes, ano: anoAtual } })
+      }
 
     // Anuidades em aberto (qualquer ano)
     for (const a of anu ?? [])
@@ -1037,19 +1062,18 @@ export default function PagamentosPage() {
   async function fetchResumo() {
     const m = String(mesSel).padStart(2,'0')
     const [{ data: membros }, { data: mens }, { data: anu }, { data: evs }] = await Promise.all([
-      supabase.from('membros').select('id'),
+      supabase.from('membros').select('id, status, data_entrada'),
       supabase.from('mensalidades').select('membro_id, status').eq('mes', mesSel).eq('ano', anoSel),
       supabase.from('anuidades').select('membro_id, valor, status').eq('ano', anoSel),
       supabase.from('pagamentos_eventos').select('id, valor, tipo').gte('data', `${anoSel}-${m}-01`).lte('data', `${anoSel}-${m}-31`),
     ])
 
-    const totalMembros = (membros ?? []).length
-
-    // Mensalidades: todo membro que NÃO está pago nem isento conta como pendência (R$20)
-    const pagos   = new Set((mens ?? []).filter(r => r.status === 'pago').map(r => r.membro_id))
-    const isentos = new Set((mens ?? []).filter(r => r.status === 'isento').map(r => r.membro_id))
-    const naoPagos = Math.max(0, totalMembros - pagos.size - isentos.size)
-    const totalMens = naoPagos * 20
+    // Mensalidades: registro "não pago" conta; sem registro, só conta quem estava ativo e já tinha entrado
+    const comRegistro = new Set((mens ?? []).map(r => r.membro_id))
+    const naoPagosReg = (mens ?? []).filter(r => r.status === 'nao_pago').length
+    const semRegistroCobraveis = ((membros ?? []) as Membro[]).filter(mb =>
+      !comRegistro.has(mb.id) && mb.status !== 'inativo' && entrouAte(mb, mesSel, anoSel)).length
+    const totalMens = (naoPagosReg + semRegistroCobraveis) * 20
 
     // Anuidades: pendentes (não pagas)
     const totalAnu = (anu ?? []).filter(r => r.status !== 'pago').reduce((s, r) => s + +r.valor, 0)
