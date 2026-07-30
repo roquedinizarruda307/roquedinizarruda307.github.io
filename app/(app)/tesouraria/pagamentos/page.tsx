@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
-import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check } from 'lucide-react'
+import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check, Trash2 } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -650,9 +650,16 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
   }
 
   async function removerEvento(ev: any) {
-    if (!confirm(`Excluir o evento "${ev.nome}" e seus participantes?`)) return
-    await supabase.from('pagamentos_eventos').delete().eq('id', ev.id)
-    fetchDados()
+    if (!confirm(`Excluir o evento "${ev.nome}" e tudo que está dentro dele (itens, pedidos e participantes)?`)) return
+    // apaga primeiro o que depende do evento, para nada travar a exclusão
+    await Promise.all([
+      supabase.from('evento_participantes').delete().eq('evento_id', ev.id),
+      supabase.from('evento_itens').delete().eq('evento_id', ev.id),
+      supabase.from('evento_pedidos').delete().eq('evento_id', ev.id),
+    ])
+    const { error } = await supabase.from('pagamentos_eventos').delete().eq('id', ev.id)
+    if (error) { alert(`Não foi possível excluir o evento: ${error.message}`); return }
+    fetchDados(); onMudou()
   }
 
   return (
@@ -717,8 +724,8 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
         return (
           <div key={ev.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {/* Cabeçalho do evento */}
-            <button onClick={() => setExpandido(aberto ? null : ev.id)}
-              className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+            <div onClick={() => setExpandido(aberto ? null : ev.id)}
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left cursor-pointer">
               <div className="flex items-center gap-3 min-w-0">
                 {ev.tipo === 'ingresso' && <Ticket size={16} className="text-gray-400 flex-shrink-0" />}
                 {ev.tipo === 'lista' && <Ticket size={16} className="text-gray-400 flex-shrink-0" />}
@@ -738,9 +745,13 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
                 {ev.tipo !== 'lista' && (pendente > 0
                   ? <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#fef2f2', color: '#dc2626' }}>{fmt(pendente)} a receber</span>
                   : ps.length > 0 && <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#f0fdf4', color: '#16a34a' }}>Quitado</span>)}
+                <button onClick={e => { e.stopPropagation(); removerEvento(ev) }} title="Excluir evento"
+                  className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors">
+                  <Trash2 size={15} />
+                </button>
                 <ChevronDown size={16} className="text-gray-400 transition-transform" style={{ transform: aberto ? 'rotate(180deg)' : 'none' }} />
               </div>
-            </button>
+            </div>
 
             {/* Corpo: lista de pedidos OU participantes */}
             {aberto && ev.tipo === 'lista' && <ListaPedidos ev={ev} membros={membros} onMudou={onMudou} onExcluir={() => removerEvento(ev)} />}
