@@ -1,8 +1,8 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
+import { setModoConsulta } from '@/lib/supabase'
 
 export type Papel = 'admin' | 'escrivao'
 
@@ -12,10 +12,12 @@ export const usePapel = () => useContext(Ctx)
 export function PapelProvider({ children }: { children: React.ReactNode }) {
   const [papel, setPapel] = useState<Papel>('admin')
   const [carregando, setCarregando] = useState(true)
-  const pathname = usePathname()
-  const router = useRouter()
 
   useEffect(() => {
+    // atalho de teste no computador local: ?papel=escrivao
+    if (process.env.NODE_ENV === 'development' && new URLSearchParams(window.location.search).get('papel') === 'escrivao') {
+      setPapel('escrivao'); setCarregando(false); return
+    }
     if (!isSupabaseConfigured()) { setPapel('admin'); setCarregando(false); return }
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -26,13 +28,8 @@ export function PapelProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
-  // Escrivão só acessa a aba do escrivão
-  useEffect(() => {
-    if (carregando) return
-    if (papel === 'escrivao' && !pathname.startsWith('/tesouraria/escrivao')) {
-      router.replace('/tesouraria/escrivao')
-    }
-  }, [papel, carregando, pathname, router])
+  // Escrivão vê tudo, mas só edita a própria aba (escritas fora dela são bloqueadas)
+  useEffect(() => { setModoConsulta(papel === 'escrivao') }, [papel])
 
   return <Ctx.Provider value={{ papel, carregando }}>{children}</Ctx.Provider>
 }

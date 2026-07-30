@@ -26,8 +26,8 @@ export default function Sidebar() {
   const supabase = createClient()
   const { papel } = usePapel()
 
-  // Escrivão vê apenas a aba do escrivão
-  const itens = papel === 'escrivao' ? navItems.filter(i => i.href === '/tesouraria/escrivao') : navItems
+  // Escrivão vê todas as abas (mas só edita a dele — modo consulta nas demais)
+  const itens = navItems
 
   async function handleLogout() {
     if (isSupabaseConfigured()) await supabase.auth.signOut()
@@ -60,6 +60,12 @@ export default function Sidebar() {
               <div className="h-px" style={{ background: '#c0392b', width: 16 }} />
               <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: '#8d96b8' }}>Tesouraria</p>
             </div>
+            {papel === 'escrivao' && (
+              <span className="inline-block mt-1.5 text-[9px] font-bold tracking-widest uppercase px-2 py-0.5 rounded"
+                style={{ background: 'rgba(192,57,43,0.15)', color: '#e07a6f' }}>
+                Modo consulta
+              </span>
+            )}
           </div>
         </div>
 
