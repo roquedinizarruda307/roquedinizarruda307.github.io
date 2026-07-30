@@ -4,15 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { ChevronDown, FileSpreadsheet, Plus, X, Pencil, Trash2 } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
+import { liquidoEntrada, brutoEntrada, comTaxaSaida, semTaxaSaida } from '@/lib/taxas'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const CATS = ['Mensalidade','Anuidade','Evento','Doação','Material','Alimentação','Transporte','Outro']
-
-// Taxa de transferência embutida em cada despesa (uma única saída já com a taxa)
-const TAXA_TRANSF = 0.0089
-const calcTaxa = (v: number) => Math.round(v * TAXA_TRANSF * 100) / 100
-const comTaxa  = (v: number) => Math.round(v * (1 + TAXA_TRANSF) * 100) / 100
-const semTaxa  = (v: number) => Math.round(v / (1 + TAXA_TRANSF) * 100) / 100
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -60,8 +55,8 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
     e.preventDefault()
     const payload = {
       tipo, descricao: form.descricao, origem_destino: form.origem_destino,
-      // despesa sai com a taxa de transferência embutida no valor
-      categoria: form.categoria || null, valor: isE ? +form.valor : comTaxa(+form.valor), data: form.data,
+      // entrada: desconta 0,71% · despesa: soma 1,34% (taxas de transferência)
+      categoria: form.categoria || null, valor: isE ? liquidoEntrada(+form.valor) : comTaxaSaida(+form.valor), data: form.data,
     }
     if (editId) {
       await supabase.from('transacoes').update(payload).eq('id', editId)
@@ -77,8 +72,8 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
     setEditId(r.id)
     setForm({
       descricao: r.descricao ?? '', origem_destino: r.origem_destino ?? '',
-      // na despesa, o formulário mostra o valor sem a taxa (ela é reaplicada ao salvar)
-      categoria: r.categoria ?? '', valor: r.valor == null ? '' : (isE ? String(r.valor) : semTaxa(+r.valor).toFixed(2)),
+      // o formulário mostra o valor sem a taxa (ela é reaplicada ao salvar)
+      categoria: r.categoria ?? '', valor: r.valor == null ? '' : (isE ? brutoEntrada(+r.valor).toFixed(2) : semTaxaSaida(+r.valor).toFixed(2)),
       data: (r.data ?? now.toISOString().split('T')[0]).slice(0, 10),
     })
     setShowForm(true)
@@ -185,10 +180,13 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
               <input required type="date" value={form.data}
                 onChange={e => setForm({...form, data: e.target.value})} className={inp} />
             </div>
-            {!isE && +form.valor > 0 && (
+            {+form.valor > 0 && (
               <p className="text-xs text-gray-400 mt-3">
-                Taxa de transferência (0,89%): <b style={{ color: cor }}>{fmt(calcTaxa(+form.valor))}</b>
-                {' '}· sai do saldo em uma única transação: <b style={{ color: cor }}>{fmt(comTaxa(+form.valor))}</b>
+                {isE
+                  ? <>Taxa sobre receita (0,71%): <b style={{ color: cor }}>−{fmt(+form.valor - liquidoEntrada(+form.valor))}</b>
+                      {' '}· entra no caixa: <b style={{ color: cor }}>{fmt(liquidoEntrada(+form.valor))}</b></>
+                  : <>Taxa sobre despesa (1,34%): <b style={{ color: cor }}>+{fmt(comTaxaSaida(+form.valor) - +form.valor)}</b>
+                      {' '}· sai do saldo: <b style={{ color: cor }}>{fmt(comTaxaSaida(+form.valor))}</b></>}
               </p>
             )}
             <div className="flex gap-2 mt-4">

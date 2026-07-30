@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check, Trash2 } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
+import { liquidoEntrada, comTaxaSaida } from '@/lib/taxas'
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 const ANO_ATUAL = new Date().getFullYear()
@@ -85,7 +86,7 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
     const hoje = new Date().toISOString().slice(0, 10)
     await supabase.from('transacoes').insert([{
       tipo: 'entrada',
-      valor: 20,
+      valor: liquidoEntrada(20),   // entra líquido, já descontada a taxa de 0,71%
       data: hoje,
       categoria: 'Mensalidade',
       descricao: `Mensalidade ${MESES_C[mes - 1]}/${ano} — ${membro.nome}`,
@@ -353,7 +354,7 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
       // lança no caixa
       const resumo = resumoItens(p)
       const { data } = await supabase.from('transacoes').insert([{
-        tipo: 'entrada', valor: p.valor, data: new Date().toISOString().slice(0, 10),
+        tipo: 'entrada', valor: liquidoEntrada(+p.valor), data: new Date().toISOString().slice(0, 10),
         categoria: 'Evento', descricao: `${ev.nome} — ${p.nome}${resumo ? ` (${resumo})` : ''}`,
       }]).select('id').single()
       await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', p.id)
@@ -563,7 +564,6 @@ const CAT_CORES: Record<string, { bg: string; color: string }> = {
   'ACOMPANHANTE':   { bg: '#fdf2f8', color: '#be185d' },
 }
 const catCor = (c: string) => CAT_CORES[c] ?? { bg: '#f3f4f6', color: '#6b7280' }
-const TAXA_EVENTO = (v: number) => Math.round(v * 1.0089 * 100) / 100
 
 function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () => void; onExcluir: () => void }) {
   const [inscritos, setInscritos] = useState<Pedido[]>([])
@@ -599,7 +599,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
     setInscritos(prev => prev.map(x => x.id === p.id ? { ...x, pago: novo } : x))
     if (novo) {
       const { data } = await supabase.from('transacoes').insert([{
-        tipo: 'entrada', valor: p.valor, data: new Date().toISOString().slice(0, 10),
+        tipo: 'entrada', valor: liquidoEntrada(+p.valor), data: new Date().toISOString().slice(0, 10),
         categoria: 'Evento', descricao: `${ev.nome} — ${p.nome} (inscrição)`,
       }]).select('id').single()
       await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', p.id)
@@ -617,12 +617,12 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
     fetchTudo(); onMudou()
   }
 
-  // Despesa do evento: sai do caixa com a taxa de transferência (0,89%) embutida
+  // Despesa do evento: sai do caixa com a taxa de transferência (1,34%) embutida
   async function addDespesa(e: React.FormEvent) {
     e.preventDefault()
     if (!dDesc.trim() || !+dValor) return
     await supabase.from('transacoes').insert([{
-      tipo: 'saida', valor: TAXA_EVENTO(+dValor), data: new Date().toISOString().slice(0, 10),
+      tipo: 'saida', valor: comTaxaSaida(+dValor), data: new Date().toISOString().slice(0, 10),
       categoria: 'Evento', descricao: `${ev.nome} — ${dDesc.trim()}`,
     }])
     setDDesc(''); setDValor(''); fetchTudo(); onMudou()
@@ -735,7 +735,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
         </form>
         {+dValor > 0 && (
           <p className="text-xs text-gray-400 mt-2">
-            Com a taxa de transferência (0,89%), sai do saldo: <b style={{ color: '#c0392b' }}>{fmt(TAXA_EVENTO(+dValor))}</b>
+            Com a taxa de transferência (1,34%), sai do saldo: <b style={{ color: '#c0392b' }}>{fmt(comTaxaSaida(+dValor))}</b>
           </p>
         )}
       </div>
@@ -1127,7 +1127,7 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
       if (id) {
         const { data: existe } = await supabase.from('transacoes').select('id').eq('mensalidade_id', id).limit(1)
         if (!existe?.length) await supabase.from('transacoes').insert([{
-          tipo: 'entrada', valor: 20, data: hoje, categoria: 'Mensalidade',
+          tipo: 'entrada', valor: liquidoEntrada(20), data: hoje, categoria: 'Mensalidade',
           descricao: `Mensalidade ${p.ref} — ${membro.nome}`, membro_id: membro.id, mensalidade_id: id,
         }])
       }

@@ -76,9 +76,9 @@ function lancarInscricao(resp) {
   const valor = valorDoLote(quando);
   const dataStr = Utilities.formatDate(quando, 'America/Sao_Paulo', 'yyyy-MM-dd');
 
-  // 1) entrada no caixa
+  // 1) entrada no caixa (líquida: taxa de 0,71% sobre receitas)
   const tx = supabase('POST', '/rest/v1/transacoes', [{
-    tipo: 'entrada', valor: valor, data: dataStr, categoria: 'Evento',
+    tipo: 'entrada', valor: Math.round(valor * (1 - 0.0071) * 100) / 100, data: dataStr, categoria: 'Evento',
     descricao: evento.nome + ' — ' + nome + ' (inscrição)',
   }]);
 
