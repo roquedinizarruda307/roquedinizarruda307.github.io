@@ -2,18 +2,27 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Wallet, Check, NotebookPen, Trash2 } from 'lucide-react'
+import { Wallet, Check, Users, Trash2 } from 'lucide-react'
 import { usePapel } from '@/components/PapelContext'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 type Perfil = { email: string; papel: string }
 
+const NIVEIS = [
+  { v: 'dono',     label: 'Dona',     bg: '#fef2f2', color: '#c0392b' },
+  { v: 'admin',    label: 'Admin',    bg: '#f0fdf4', color: '#16a34a' },
+  { v: 'escrivao', label: 'Escrivão', bg: '#eef2ff', color: '#4338ca' },
+]
+
 export default function AjustesPage() {
-  const { papel } = usePapel()
+  const { papel, carregando } = usePapel()
   const [perfis, setPerfis] = useState<Perfil[]>([])
   const [pendentes, setPendentes] = useState<Perfil[]>([])
   const [novoEmail, setNovoEmail] = useState('')
+  const [novoNivel, setNovoNivel] = useState('escrivao')
+  const [meuEmail, setMeuEmail] = useState('')
   const [saldo, setSaldo] = useState<number | null>(null)
   const [alvo, setAlvo] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -25,12 +34,17 @@ export default function AjustesPage() {
     setSaldo(s)
   }
 
-  useEffect(() => { carregarSaldo(); carregarPerfis() }, [])
+  useEffect(() => {
+    carregarSaldo(); carregarPerfis()
+    if (isSupabaseConfigured()) {
+      createClient().auth.getUser().then(({ data: { user } }) => setMeuEmail((user?.email ?? '').toLowerCase()))
+    }
+  }, [])
 
   async function carregarPerfis() {
     const { data } = await supabase.from('perfis').select('*').order('email')
     const todos = (data ?? []) as (Perfil & { aprovado: boolean })[]
-    setPerfis(todos.filter(p => p.aprovado && p.papel === 'escrivao'))
+    setPerfis(todos.filter(p => p.aprovado))
     setPendentes(todos.filter(p => !p.aprovado))
   }
 
@@ -44,15 +58,23 @@ export default function AjustesPage() {
     carregarPerfis()
   }
 
-  async function addEscrivao(e: React.FormEvent) {
+  async function mudarNivel(email: string, nivel: string) {
+    if (email === meuEmail) { alert('Você não pode mudar o seu próprio nível.'); return }
+    await supabase.from('perfis').update({ papel: nivel }).eq('email', email)
+    carregarPerfis()
+  }
+
+  async function addConta(e: React.FormEvent) {
     e.preventDefault()
     const email = novoEmail.trim().toLowerCase()
     if (!email) return
-    await supabase.from('perfis').upsert({ email, papel: 'escrivao' }, { onConflict: 'email' })
-    setNovoEmail(''); carregarPerfis()
+    await supabase.from('perfis').upsert({ email, papel: novoNivel, aprovado: true }, { onConflict: 'email' })
+    setNovoEmail(''); setNovoNivel('escrivao'); carregarPerfis()
   }
 
-  async function removerEscrivao(email: string) {
+  async function removerConta(email: string) {
+    if (email === meuEmail) { alert('Você não pode remover a sua própria conta.'); return }
+    if (!confirm(`Remover o acesso de ${email}?`)) return
     await supabase.from('perfis').delete().eq('email', email)
     carregarPerfis()
   }
@@ -82,6 +104,19 @@ export default function AjustesPage() {
 
   const valorAlvo = parseFloat(alvo.replace(',', '.'))
   const diff = saldo !== null && !isNaN(valorAlvo) ? +(valorAlvo - saldo).toFixed(2) : null
+
+  // Configurações são exclusivas da conta dona
+  if (carregando) return <div className="p-7 text-sm text-gray-300">Carregando...</div>
+  if (papel !== 'dono') {
+    return (
+      <div className="p-7 max-w-2xl">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
+          <p className="text-lg font-black text-gray-900 mb-1">Acesso restrito</p>
+          <p className="text-sm text-gray-400">Somente a conta dona do sistema pode acessar as configurações.</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-7 max-w-2xl space-y-5">
@@ -144,8 +179,8 @@ export default function AjustesPage() {
         O ajuste aparece no Fluxo como "Ajuste de caixa" e pode ser conferido/excluído lá a qualquer momento.
       </p>
 
-      {/* Solicitações pendentes (só admin) */}
-      {papel === 'admin' && (
+      {/* Solicitações pendentes */}
+      {(
         <div className="bg-white rounded-2xl border shadow-sm px-6 py-6 space-y-4 mt-2"
           style={{ borderColor: pendentes.length ? '#fde2e2' : '#f3f4f6' }}>
           <div>
@@ -184,44 +219,71 @@ export default function AjustesPage() {
         </div>
       )}
 
-      {/* Perfis de acesso (só admin) */}
-      {papel === 'admin' && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-6 space-y-4 mt-2">
-          <div className="flex items-center gap-2.5">
-            <NotebookPen size={18} className="text-gray-500" />
-            <div>
-              <h2 className="text-base font-black text-gray-900">Acesso de Escrivão</h2>
-              <p className="text-xs text-gray-400">Contas listadas aqui só verão a aba Escrivão.</p>
-            </div>
+      {/* Contas ativas e níveis */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-6 space-y-4 mt-2">
+        <div className="flex items-center gap-2.5">
+          <Users size={18} className="text-gray-500" />
+          <div>
+            <h2 className="text-base font-black text-gray-900">Contas e níveis</h2>
+            <p className="text-xs text-gray-400">
+              <b>Dona</b>: acesso total, inclusive Ajustes · <b>Admin</b>: edita tudo, menos Ajustes · <b>Escrivão</b>: vê tudo, edita só a aba Escrivão.
+            </p>
           </div>
+        </div>
 
-          <form onSubmit={addEscrivao} className="flex items-center gap-2">
-            <input type="email" value={novoEmail} onChange={e => setNovoEmail(e.target.value)}
-              placeholder="email@do-escrivao.com" required
-              className="flex-1 border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm focus:border-gray-400 outline-none" />
-            <button type="submit" className="text-white text-sm font-bold px-4 py-2.5 rounded-lg" style={{ background: '#c0392b' }}>
+        <div className="space-y-1.5">
+          {perfis.length === 0 ? (
+            <p className="text-sm text-gray-300">Nenhuma conta cadastrada.</p>
+          ) : perfis.map(p => {
+            const ehEu = p.email === meuEmail
+            const nivel = NIVEIS.find(n => n.v === p.papel) ?? NIVEIS[1]
+            return (
+              <div key={p.email} className="flex items-center justify-between gap-3 flex-wrap bg-gray-50 rounded-lg px-3.5 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm text-gray-700 truncate">{p.email}</span>
+                  {ehEu && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#f3f4f6', color: '#6b7280' }}>VOCÊ</span>}
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {ehEu ? (
+                    <span className="text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg"
+                      style={{ background: nivel.bg, color: nivel.color }}>{nivel.label}</span>
+                  ) : (
+                    <select value={p.papel} onChange={e => mudarNivel(p.email, e.target.value)}
+                      className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border-0 cursor-pointer appearance-none text-center"
+                      style={{ background: nivel.bg, color: nivel.color }}>
+                      {NIVEIS.map(n => <option key={n.v} value={n.v}>{n.label}</option>)}
+                    </select>
+                  )}
+                  {!ehEu && (
+                    <button onClick={() => removerConta(p.email)} className="text-gray-300 hover:text-red-500" title="Remover acesso">
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <form onSubmit={addConta} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <input type="email" value={novoEmail} onChange={e => setNovoEmail(e.target.value)}
+            placeholder="email@da-nova-conta.com" required
+            className="flex-1 border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm focus:border-gray-400 outline-none" />
+          <div className="flex gap-2">
+            <select value={novoNivel} onChange={e => setNovoNivel(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white cursor-pointer">
+              {NIVEIS.map(n => <option key={n.v} value={n.v}>{n.label}</option>)}
+            </select>
+            <button type="submit" className="text-white text-sm font-bold px-4 py-2.5 rounded-lg whitespace-nowrap" style={{ background: '#c0392b' }}>
               Adicionar
             </button>
-          </form>
-
-          <div className="space-y-1.5">
-            {perfis.length === 0 ? (
-              <p className="text-sm text-gray-300">Nenhum escrivão definido. Todos com conta têm acesso completo.</p>
-            ) : perfis.map(p => (
-              <div key={p.email} className="flex items-center justify-between bg-gray-50 rounded-lg px-3.5 py-2.5">
-                <span className="text-sm text-gray-700">{p.email}</span>
-                <button onClick={() => removerEscrivao(p.email)} className="text-gray-300 hover:text-red-500" title="Remover">
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            ))}
           </div>
+        </form>
 
-          <p className="text-xs text-gray-400">
-            A conta precisa ser criada normalmente (na tela de login → "Criar conta"). Depois adicione o e-mail aqui para limitar o acesso só ao Escrivão.
-          </p>
-        </div>
-      )}
+        <p className="text-xs text-gray-400">
+          A pessoa ainda precisa criar a conta na tela de login ("Criar conta") com esse mesmo e-mail. O nível definido aqui já vale quando ela entrar.
+        </p>
+      </div>
     </div>
   )
 }

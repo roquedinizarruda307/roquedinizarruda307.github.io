@@ -26,8 +26,8 @@ export default function Sidebar() {
   const supabase = createClient()
   const { papel } = usePapel()
 
-  // Escrivão vê todas as abas (mas só edita a dele — modo consulta nas demais)
-  const itens = navItems
+  // Ajustes só aparece para a conta dona; escrivão vê o resto em modo consulta
+  const itens = papel === 'dono' ? navItems : navItems.filter(i => i.href !== '/tesouraria/ajustes')
 
   async function handleLogout() {
     if (isSupabaseConfigured()) await supabase.auth.signOut()
