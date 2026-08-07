@@ -76,9 +76,13 @@ function lancarInscricao(resp) {
   const valor = valorDoLote(quando);
   const dataStr = Utilities.formatDate(quando, 'America/Sao_Paulo', 'yyyy-MM-dd');
 
-  // 1) entrada no caixa (líquida: taxa de 0,89%, máx. R$ 8,50 por operação)
+  // 1) entrada no caixa: valor_bruto aparece nas listas; valor (líquido,
+  //    já sem a taxa de 0,89% máx. R$ 8,50) é o que conta no saldo
   const tx = supabase('POST', '/rest/v1/transacoes', [{
-    tipo: 'entrada', valor: Math.round((valor - Math.min(Math.round(valor * 0.0089 * 100) / 100, 8.5)) * 100) / 100, data: dataStr, categoria: 'Evento',
+    tipo: 'entrada',
+    valor: Math.round((valor - Math.min(Math.round(valor * 0.0089 * 100) / 100, 8.5)) * 100) / 100,
+    valor_bruto: valor,
+    data: dataStr, categoria: 'Evento',
     descricao: evento.nome + ' — ' + nome + ' (inscrição)',
   }]);
 

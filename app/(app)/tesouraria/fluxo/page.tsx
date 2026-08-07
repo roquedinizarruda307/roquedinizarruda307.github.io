@@ -35,11 +35,13 @@ export default function FluxoPage() {
   }
 
   async function excluir(r: any) {
-    if (!confirm(`Excluir "${r.descricao}" (${fmt(+r.valor)})?`)) return
+    if (!confirm(`Excluir "${r.descricao}" (${fmt(+(r.valor_bruto ?? r.valor))})?`)) return
     await supabase.from('transacoes').delete().eq('id', r.id)
     load()
   }
 
+  // linhas mostram o valor bruto; totais e saldo já descontam as taxas
+  const bruto = (r: any) => +(r.valor_bruto ?? r.valor)
   const entradas = rows.filter(r => r.tipo === 'entrada').reduce((s, r) => s + +r.valor, 0)
   const saidas   = rows.filter(r => r.tipo === 'saida').reduce((s, r) => s + +r.valor, 0)
   const saldo    = entradas - saidas
@@ -50,13 +52,17 @@ export default function FluxoPage() {
       linhas.push([
         new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR'),
         r.descricao ?? '', r.categoria ?? '', r.tipo === 'entrada' ? 'Entrada' : 'Saída',
-        (r.tipo === 'entrada' ? 1 : -1) * +r.valor,
+        (r.tipo === 'entrada' ? 1 : -1) * bruto(r),
       ])
     }
+    const entradasBrutas = rows.filter(r => r.tipo === 'entrada').reduce((s, r) => s + bruto(r), 0)
+    const saidasBrutas   = rows.filter(r => r.tipo === 'saida').reduce((s, r) => s + bruto(r), 0)
+    const taxas = +((entradasBrutas - entradas) + (saidas - saidasBrutas)).toFixed(2)
     linhas.push([])
-    linhas.push(['', '', '', 'Entradas', entradas])
-    linhas.push(['', '', '', 'Saídas', saidas])
-    linhas.push(['', '', '', 'Saldo', saldo])
+    linhas.push(['', '', '', 'Entradas (brutas)', entradasBrutas])
+    linhas.push(['', '', '', 'Saídas (brutas)', saidasBrutas])
+    linhas.push(['', '', '', 'Taxas bancárias', taxas])
+    linhas.push(['', '', '', 'Saldo (líquido)', saldo])
     exportarExcel(`fluxo_${MESES[mes-1]}_${ano}.xlsx`, linhas, 'Fluxo')
   }
 
@@ -128,7 +134,7 @@ export default function FluxoPage() {
                 : <span className="text-sm text-gray-300">—</span>}
             </div>
             <p className="text-sm font-semibold" style={{ color: r.tipo === 'entrada' ? '#16a34a' : '#c0392b' }}>
-              {r.tipo === 'entrada' ? '+' : '-'}{fmt(+r.valor)}
+              {r.tipo === 'entrada' ? '+' : '-'}{fmt(bruto(r))}
             </p>
             <div className="flex justify-end">
               <button onClick={() => excluir(r)} title="Excluir"

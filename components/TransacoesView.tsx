@@ -55,8 +55,11 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
     e.preventDefault()
     const payload = {
       tipo, descricao: form.descricao, origem_destino: form.origem_destino,
-      // taxa de transferência: 0,89% (máx. R$ 8,50) — desconta na entrada, soma na saída
-      categoria: form.categoria || null, valor: isE ? liquidoEntrada(+form.valor) : comTaxaSaida(+form.valor), data: form.data,
+      // valor_bruto: o que aparece nas listas · valor: o que conta no saldo
+      // (taxa de 0,89%, máx. R$ 8,50 — descontada na entrada, somada na saída)
+      categoria: form.categoria || null, data: form.data,
+      valor: isE ? liquidoEntrada(+form.valor) : comTaxaSaida(+form.valor),
+      valor_bruto: +form.valor,
     }
     if (editId) {
       await supabase.from('transacoes').update(payload).eq('id', editId)
@@ -73,27 +76,29 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
     setForm({
       descricao: r.descricao ?? '', origem_destino: r.origem_destino ?? '',
       // o formulário mostra o valor sem a taxa (ela é reaplicada ao salvar)
-      categoria: r.categoria ?? '', valor: r.valor == null ? '' : (isE ? brutoEntrada(+r.valor).toFixed(2) : semTaxaSaida(+r.valor).toFixed(2)),
+      categoria: r.categoria ?? '', valor: r.valor == null ? '' : (+(r.valor_bruto ?? (isE ? brutoEntrada(+r.valor) : semTaxaSaida(+r.valor)))).toFixed(2),
       data: (r.data ?? now.toISOString().split('T')[0]).slice(0, 10),
     })
     setShowForm(true)
   }
 
   async function excluir(r: any) {
-    if (!confirm(`Excluir "${r.descricao}" (${fmt(+r.valor)})?`)) return
+    if (!confirm(`Excluir "${r.descricao}" (${fmt(+(r.valor_bruto ?? r.valor))})?`)) return
     await supabase.from('transacoes').delete().eq('id', r.id)
     if (editId === r.id) { resetForm(); setShowForm(false) }
     load()
   }
 
-  const subtotal = rows.reduce((s, r) => s + +r.valor, 0)
+  // nas listas mostramos o valor bruto; a taxa só aparece descontada no saldo
+  const bruto = (r: any) => +(r.valor_bruto ?? r.valor)
+  const subtotal = rows.reduce((s, r) => s + bruto(r), 0)
 
   function exportar() {
     const linhas: (string | number)[][] = [['Data', 'Descrição', isE ? 'Origem' : 'Destino', 'Categoria', 'Valor']]
     for (const r of rows) {
       linhas.push([
         new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR'),
-        r.descricao ?? '', r.origem_destino ?? '', r.categoria ?? '', +r.valor,
+        r.descricao ?? '', r.origem_destino ?? '', r.categoria ?? '', bruto(r),
       ])
     }
     linhas.push(['', '', '', 'TOTAL', subtotal])
@@ -223,7 +228,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
                 : <span className="text-sm text-gray-300">—</span>}
             </div>
             <p className="text-sm font-semibold" style={{ color: cor }}>
-              {isE ? '+' : '-'}{fmt(+r.valor)}
+              {isE ? '+' : '-'}{fmt(bruto(r))}
             </p>
             <div className="flex items-center gap-1 justify-end">
               <button onClick={() => editar(r)} title="Editar"

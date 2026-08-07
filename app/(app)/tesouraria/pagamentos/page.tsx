@@ -86,7 +86,8 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
     const hoje = new Date().toISOString().slice(0, 10)
     await supabase.from('transacoes').insert([{
       tipo: 'entrada',
-      valor: liquidoEntrada(20),   // entra líquido, já descontada a taxa de transferência
+      valor: liquidoEntrada(20),   // conta no saldo já sem a taxa
+      valor_bruto: 20,             // aparece nas listas
       data: hoje,
       categoria: 'Mensalidade',
       descricao: `Mensalidade ${MESES_C[mes - 1]}/${ano} — ${membro.nome}`,
@@ -354,7 +355,7 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
       // lança no caixa
       const resumo = resumoItens(p)
       const { data } = await supabase.from('transacoes').insert([{
-        tipo: 'entrada', valor: liquidoEntrada(+p.valor), data: new Date().toISOString().slice(0, 10),
+        tipo: 'entrada', valor: liquidoEntrada(+p.valor), valor_bruto: +p.valor, data: new Date().toISOString().slice(0, 10),
         categoria: 'Evento', descricao: `${ev.nome} — ${p.nome}${resumo ? ` (${resumo})` : ''}`,
       }]).select('id').single()
       await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', p.id)
@@ -599,7 +600,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
     setInscritos(prev => prev.map(x => x.id === p.id ? { ...x, pago: novo } : x))
     if (novo) {
       const { data } = await supabase.from('transacoes').insert([{
-        tipo: 'entrada', valor: liquidoEntrada(+p.valor), data: new Date().toISOString().slice(0, 10),
+        tipo: 'entrada', valor: liquidoEntrada(+p.valor), valor_bruto: +p.valor, data: new Date().toISOString().slice(0, 10),
         categoria: 'Evento', descricao: `${ev.nome} — ${p.nome} (inscrição)`,
       }]).select('id').single()
       await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', p.id)
@@ -622,7 +623,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
     e.preventDefault()
     if (!dDesc.trim() || !+dValor) return
     await supabase.from('transacoes').insert([{
-      tipo: 'saida', valor: comTaxaSaida(+dValor), data: new Date().toISOString().slice(0, 10),
+      tipo: 'saida', valor: comTaxaSaida(+dValor), valor_bruto: +dValor, data: new Date().toISOString().slice(0, 10),
       categoria: 'Evento', descricao: `${ev.nome} — ${dDesc.trim()}`,
     }])
     setDDesc(''); setDValor(''); fetchTudo(); onMudou()
@@ -720,7 +721,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
                 <p className="text-[11px] text-gray-400">{new Date(t.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-sm font-semibold" style={{ color: '#dc2626' }}>-{fmt(+t.valor)}</span>
+                <span className="text-sm font-semibold" style={{ color: '#dc2626' }}>-{fmt(+(t.valor_bruto ?? t.valor))}</span>
                 <button onClick={() => delDespesa(t)} className="text-gray-300 hover:text-red-500 p-1"><X size={14} /></button>
               </div>
             </div>
@@ -1127,7 +1128,7 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
       if (id) {
         const { data: existe } = await supabase.from('transacoes').select('id').eq('mensalidade_id', id).limit(1)
         if (!existe?.length) await supabase.from('transacoes').insert([{
-          tipo: 'entrada', valor: liquidoEntrada(20), data: hoje, categoria: 'Mensalidade',
+          tipo: 'entrada', valor: liquidoEntrada(20), valor_bruto: 20, data: hoje, categoria: 'Mensalidade',
           descricao: `Mensalidade ${p.ref} — ${membro.nome}`, membro_id: membro.id, mensalidade_id: id,
         }])
       }
