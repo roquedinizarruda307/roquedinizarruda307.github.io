@@ -585,9 +585,13 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
 
   useEffect(() => { fetchTudo() }, [fetchTudo])
 
+  // bruto: valores cheios (sem taxa) para mostrar; líquido: o que conta no saldo
+  const brutoTx = (t: any) => +(t.valor_bruto ?? t.valor)
   const receita = txs.filter(t => t.tipo === 'entrada').reduce((s, t) => s + +t.valor, 0)
+  const receitaBruta = txs.filter(t => t.tipo === 'entrada').reduce((s, t) => s + brutoTx(t), 0)
   const despesas = txs.filter(t => t.tipo === 'saida')
   const despesa = despesas.reduce((s, t) => s + +t.valor, 0)
+  const despesaBruta = despesas.reduce((s, t) => s + brutoTx(t), 0)
 
   const categorias = [...new Set(inscritos.map(p => (p.item_nome ?? 'SEM CATEGORIA').toUpperCase()))]
     .map(c => ({ c, n: inscritos.filter(p => (p.item_nome ?? 'SEM CATEGORIA').toUpperCase() === c).length }))
@@ -638,10 +642,10 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
   if (loading) return <div className="py-6 text-center text-sm text-gray-300">Carregando...</div>
 
   const cards = [
-    { label: 'Inscritos', valor: String(inscritos.length), cor: '#111827' },
-    { label: 'Receita', valor: fmt(receita), cor: '#16a34a' },
-    { label: 'Despesas', valor: fmt(despesa), cor: '#dc2626' },
-    { label: 'Saldo do evento', valor: fmt(receita - despesa), cor: receita - despesa >= 0 ? '#16a34a' : '#dc2626' },
+    { label: 'Inscritos', valor: String(inscritos.length), cor: '#111827', sub: '' },
+    { label: 'Receita (bruta)', valor: fmt(receitaBruta), cor: '#16a34a', sub: `líquida: ${fmt(receita)}` },
+    { label: 'Despesas (brutas)', valor: fmt(despesaBruta), cor: '#dc2626', sub: `com taxas: ${fmt(despesa)}` },
+    { label: 'Saldo do evento', valor: fmt(receita - despesa), cor: receita - despesa >= 0 ? '#16a34a' : '#dc2626', sub: 'já sem as taxas' },
   ]
 
   return (
@@ -652,6 +656,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
           <div key={c.label} className="bg-gray-50 rounded-xl px-4 py-3">
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">{c.label}</p>
             <p className="text-lg font-black" style={{ color: c.cor }}>{c.valor}</p>
+            {c.sub && <p className="text-[10px] text-gray-400 mt-0.5">{c.sub}</p>}
           </div>
         ))}
       </div>
