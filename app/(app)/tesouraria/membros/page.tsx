@@ -135,9 +135,10 @@ export default function MembrosPage() {
         .insert([{ nome: form.nome, matricula: form.matricula, status: form.status, data_entrada: new Date().toISOString() }])
         .select('id').single()
       if (novo?.id) {
+        // membro novo só é cobrado a partir do mês de entrada (nada retroativo)
         const ano = new Date().getFullYear(), mes = new Date().getMonth() + 1
         await supabase.from('mensalidades').insert(
-          Array.from({ length: mes }, (_, i) => ({ membro_id: novo.id, mes: i + 1, ano, valor: VALOR, status: 'nao_pago' }))
+          [{ membro_id: novo.id, mes, ano, valor: VALOR, status: 'nao_pago' }]
         )
       }
     }
