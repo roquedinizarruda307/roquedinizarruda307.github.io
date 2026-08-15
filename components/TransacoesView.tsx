@@ -185,13 +185,10 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
               <input required type="date" value={form.data}
                 onChange={e => setForm({...form, data: e.target.value})} className={inp} />
             </div>
-            {+form.valor > 0 && (
+            {!isE && +form.valor > 0 && (
               <p className="text-xs text-gray-400 mt-3">
-                {isE
-                  ? <>Taxa (0,89%, máx. R$ 8,50): <b style={{ color: cor }}>−{fmt(+form.valor - liquidoEntrada(+form.valor))}</b>
-                      {' '}· entra no caixa: <b style={{ color: cor }}>{fmt(liquidoEntrada(+form.valor))}</b></>
-                  : <>Taxa (0,89%, máx. R$ 8,50): <b style={{ color: cor }}>+{fmt(comTaxaSaida(+form.valor) - +form.valor)}</b>
-                      {' '}· sai do saldo: <b style={{ color: cor }}>{fmt(comTaxaSaida(+form.valor))}</b></>}
+                Taxa (0,89%, máx. R$ 8,50): <b style={{ color: cor }}>+{fmt(comTaxaSaida(+form.valor) - +form.valor)}</b>
+                {' '}· sai do saldo: <b style={{ color: cor }}>{fmt(comTaxaSaida(+form.valor))}</b>
               </p>
             )}
             <div className="flex gap-2 mt-4">
