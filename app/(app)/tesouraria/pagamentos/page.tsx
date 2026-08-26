@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
-import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check, Trash2 } from 'lucide-react'
+import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check, Trash2, Pencil } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { liquidoEntrada, comTaxaSaida } from '@/lib/taxas'
 
@@ -571,8 +571,10 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
   const [txs, setTxs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
+  const [dTipo, setDTipo] = useState<'saida' | 'entrada'>('saida')
   const [dDesc, setDDesc] = useState('')
   const [dValor, setDValor] = useState('')
+  const [editTx, setEditTx] = useState<{ id: string; tipo: string; desc: string; valor: string } | null>(null)
 
   const fetchTudo = useCallback(async () => {
     setLoading(true)
@@ -592,6 +594,8 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
   const despesas = txs.filter(t => t.tipo === 'saida')
   const despesa = despesas.reduce((s, t) => s + +t.valor, 0)
   const despesaBruta = despesas.reduce((s, t) => s + brutoTx(t), 0)
+  // lançamentos avulsos do evento: todas as saídas + entradas que não são inscrição
+  const lancamentos = txs.filter(t => t.tipo === 'saida' || !String(t.descricao).includes('(inscrição)'))
 
   const categorias = [...new Set(inscritos.map(p => (p.item_nome ?? 'SEM CATEGORIA').toUpperCase()))]
     .map(c => ({ c, n: inscritos.filter(p => (p.item_nome ?? 'SEM CATEGORIA').toUpperCase() === c).length }))
@@ -622,19 +626,35 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
     fetchTudo(); onMudou()
   }
 
-  // Despesa do evento: sai do caixa com a taxa de transferência embutida (0,89%, máx. R$ 8,50)
-  async function addDespesa(e: React.FormEvent) {
+  // Lançamento avulso do evento: despesa (com taxa) ou receita, ex.: patrocínio (integral)
+  async function addLancamento(e: React.FormEvent) {
     e.preventDefault()
     if (!dDesc.trim() || !+dValor) return
+    const ehSaida = dTipo === 'saida'
     await supabase.from('transacoes').insert([{
-      tipo: 'saida', valor: comTaxaSaida(+dValor), valor_bruto: +dValor, data: new Date().toISOString().slice(0, 10),
+      tipo: dTipo, valor: ehSaida ? comTaxaSaida(+dValor) : +dValor, valor_bruto: +dValor,
+      data: new Date().toISOString().slice(0, 10),
       categoria: 'Evento', descricao: `${ev.nome} — ${dDesc.trim()}`,
     }])
     setDDesc(''); setDValor(''); fetchTudo(); onMudou()
   }
 
-  async function delDespesa(t: any) {
-    if (!confirm(`Excluir a despesa "${t.descricao}" (${fmt(+t.valor)})?`)) return
+  // Corrige um lançamento do evento (descrição/valor) — a taxa é reaplicada se for despesa
+  async function salvarEdicao(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editTx || !editTx.desc.trim() || !+editTx.valor) return
+    const ehSaida = editTx.tipo === 'saida'
+    await supabase.from('transacoes').update({
+      descricao: `${ev.nome} — ${editTx.desc.trim()}`,
+      valor: ehSaida ? comTaxaSaida(+editTx.valor) : +editTx.valor,
+      valor_bruto: +editTx.valor,
+    }).eq('id', editTx.id)
+    setEditTx(null); fetchTudo(); onMudou()
+  }
+
+  async function delLancamento(t: any) {
+    const nomeL = String(t.descricao).replace(`${ev.nome} — `, '')
+    if (!confirm(`Excluir "${nomeL}" (${fmt(+(t.valor_bruto ?? t.valor))})?`)) return
     await supabase.from('transacoes').delete().eq('id', t.id)
     fetchTudo(); onMudou()
   }
@@ -714,35 +734,60 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
         </div>
       </div>
 
-      {/* Despesas do evento */}
+      {/* Lançamentos do evento: despesas e receitas avulsas (patrocínios etc.) */}
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-2">Despesas do evento ({despesas.length})</p>
+        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-2">Lançamentos do evento ({lancamentos.length})</p>
         <div className="mb-3">
-          {despesas.length === 0 && <p className="text-sm text-gray-300">Nenhuma despesa lançada.</p>}
-          {despesas.map(t => (
-            <div key={t.id} className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
-              <div className="min-w-0">
-                <p className="text-sm text-gray-800 truncate">{String(t.descricao).replace(`${ev.nome} — `, '')}</p>
-                <p className="text-[11px] text-gray-400">{new Date(t.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+          {lancamentos.length === 0 && <p className="text-sm text-gray-300">Nenhum lançamento ainda (despesas, patrocínios…).</p>}
+          {lancamentos.map(t => {
+            const nomeL = String(t.descricao).replace(`${ev.nome} — `, '')
+            const ehSaida = t.tipo === 'saida'
+            if (editTx?.id === t.id) return (
+              <form key={t.id} onSubmit={salvarEdicao} className="flex flex-col sm:flex-row gap-2 py-2 border-b border-gray-50 last:border-0">
+                <input value={editTx.desc} onChange={e => setEditTx({ ...editTx, desc: e.target.value })} className={inp + ' flex-1'} />
+                <div className="flex gap-2">
+                  <input value={editTx.valor} onChange={e => setEditTx({ ...editTx, valor: e.target.value })} type="number" step="0.01" className={inp + ' w-28'} />
+                  <button className="text-white text-sm font-medium px-3 py-2 rounded-lg" style={{ background: '#16a34a' }}>Salvar</button>
+                  <button type="button" onClick={() => setEditTx(null)} className="border border-gray-200 text-gray-500 text-sm px-3 py-2 rounded-lg">Cancelar</button>
+                </div>
+              </form>
+            )
+            return (
+              <div key={t.id} className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-800 truncate">{nomeL}</p>
+                  <p className="text-[11px] text-gray-400">{new Date(t.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-sm font-semibold" style={{ color: ehSaida ? '#dc2626' : '#16a34a' }}>{ehSaida ? '-' : '+'}{fmt(+(t.valor_bruto ?? t.valor))}</span>
+                  <button onClick={() => setEditTx({ id: t.id, tipo: t.tipo, desc: nomeL, valor: String(+(t.valor_bruto ?? t.valor)) })}
+                    className="text-gray-300 hover:text-gray-700 p-1" title="Editar"><Pencil size={13} /></button>
+                  <button onClick={() => delLancamento(t)} className="text-gray-300 hover:text-red-500 p-1" title="Excluir"><X size={14} /></button>
+                </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-sm font-semibold" style={{ color: '#dc2626' }}>-{fmt(+(t.valor_bruto ?? t.valor))}</span>
-                <button onClick={() => delDespesa(t)} className="text-gray-300 hover:text-red-500 p-1"><X size={14} /></button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
-        <form onSubmit={addDespesa} className="flex flex-col sm:flex-row gap-2">
-          <input value={dDesc} onChange={e => setDDesc(e.target.value)} placeholder="Despesa do evento (ex.: Ônibus, Alimentação…)" className={inp + ' flex-1'} />
+        <form onSubmit={addLancamento} className="flex flex-col sm:flex-row gap-2">
+          <select value={dTipo} onChange={e => setDTipo(e.target.value as 'saida' | 'entrada')} className={inp + ' sm:w-32 appearance-none'}>
+            <option value="saida">Despesa</option>
+            <option value="entrada">Receita</option>
+          </select>
+          <input value={dDesc} onChange={e => setDDesc(e.target.value)}
+            placeholder={dTipo === 'saida' ? 'Despesa (ex.: Ônibus, Alimentação…)' : 'Receita (ex.: Patrocínio Loja Maçônica…)'} className={inp + ' flex-1'} />
           <div className="flex gap-2">
             <input value={dValor} onChange={e => setDValor(e.target.value)} type="number" step="0.01" placeholder="Valor" className={inp + ' flex-1 sm:w-32'} />
-            <button className="text-white text-sm font-medium px-3.5 py-2 rounded-lg whitespace-nowrap flex-shrink-0" style={{ background: '#c0392b' }}>+ Despesa</button>
+            <button className="text-white text-sm font-medium px-3.5 py-2 rounded-lg whitespace-nowrap flex-shrink-0"
+              style={{ background: dTipo === 'saida' ? '#c0392b' : '#16a34a' }}>+ Lançar</button>
           </div>
         </form>
-        {+dValor > 0 && (
+        {+dValor > 0 && dTipo === 'saida' && (
           <p className="text-xs text-gray-400 mt-2">
             Com a taxa de transferência (0,89%, máx. R$ 8,50), sai do saldo: <b style={{ color: '#c0392b' }}>{fmt(comTaxaSaida(+dValor))}</b>
           </p>
+        )}
+        {+dValor > 0 && dTipo === 'entrada' && (
+          <p className="text-xs text-gray-400 mt-2">Entra integral no caixa e soma na receita do evento.</p>
         )}
       </div>
     </div>
