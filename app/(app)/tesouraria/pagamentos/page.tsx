@@ -742,16 +742,19 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
           {lancamentos.map(t => {
             const nomeL = String(t.descricao).replace(`${ev.nome} — `, '')
             const ehSaida = t.tipo === 'saida'
-            if (editTx?.id === t.id) return (
-              <form key={t.id} onSubmit={salvarEdicao} className="flex flex-col sm:flex-row gap-2 py-2 border-b border-gray-50 last:border-0">
-                <input value={editTx.desc} onChange={e => setEditTx({ ...editTx, desc: e.target.value })} className={inp + ' flex-1'} />
-                <div className="flex gap-2">
-                  <input value={editTx.valor} onChange={e => setEditTx({ ...editTx, valor: e.target.value })} type="number" step="0.01" className={inp + ' w-28'} />
-                  <button className="text-white text-sm font-medium px-3 py-2 rounded-lg" style={{ background: '#16a34a' }}>Salvar</button>
-                  <button type="button" onClick={() => setEditTx(null)} className="border border-gray-200 text-gray-500 text-sm px-3 py-2 rounded-lg">Cancelar</button>
-                </div>
-              </form>
-            )
+            if (editTx && editTx.id === t.id) {
+              const et = editTx
+              return (
+                <form key={t.id} onSubmit={salvarEdicao} className="flex flex-col sm:flex-row gap-2 py-2 border-b border-gray-50 last:border-0">
+                  <input value={et.desc} onChange={e => setEditTx({ ...et, desc: e.target.value })} className={inp + ' flex-1'} />
+                  <div className="flex gap-2">
+                    <input value={et.valor} onChange={e => setEditTx({ ...et, valor: e.target.value })} type="number" step="0.01" className={inp + ' w-28'} />
+                    <button className="text-white text-sm font-medium px-3 py-2 rounded-lg" style={{ background: '#16a34a' }}>Salvar</button>
+                    <button type="button" onClick={() => setEditTx(null)} className="border border-gray-200 text-gray-500 text-sm px-3 py-2 rounded-lg">Cancelar</button>
+                  </div>
+                </form>
+              )
+            }
             return (
               <div key={t.id} className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
                 <div className="min-w-0">
