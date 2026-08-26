@@ -579,7 +579,8 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
   const fetchTudo = useCallback(async () => {
     setLoading(true)
     const [{ data: peds }, { data: t }] = await Promise.all([
-      supabase.from('evento_pedidos').select('*').eq('evento_id', ev.id).order('nome'),
+      // inscritos em ordem de chegada (data da inscrição)
+      supabase.from('evento_pedidos').select('*').eq('evento_id', ev.id).order('created_at'),
       supabase.from('transacoes').select('*').ilike('descricao', `${ev.nome}%`).order('data', { ascending: false }),
     ])
     setInscritos((peds ?? []) as Pedido[]); setTxs(t ?? []); setLoading(false)
@@ -712,6 +713,8 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
                     {cat && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: catCor(cat).bg, color: catCor(cat).color }}>{cat}</span>}
                   </p>
                   <p className="text-[11px] text-gray-500 mt-0.5">
+                    {(p as any).created_at && <span>{new Date((p as any).created_at).toLocaleDateString('pt-BR')}</span>}
+                    {(p as any).created_at && (p.nome_camisa || p.tamanho || p.numero) ? ' · ' : ''}
                     {p.nome_camisa && <span>{p.nome_camisa}</span>}
                     {p.nome_camisa && p.tamanho ? ' · ' : ''}
                     {p.tamanho && <span>ID {p.tamanho}</span>}
