@@ -575,6 +575,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
   const [dDesc, setDDesc] = useState('')
   const [dValor, setDValor] = useState('')
   const [editTx, setEditTx] = useState<{ id: string; tipo: string; desc: string; valor: string } | null>(null)
+  const [editIns, setEditIns] = useState<{ id: string; nome: string; valor: string } | null>(null)
 
   const fetchTudo = useCallback(async () => {
     setLoading(true)
@@ -618,6 +619,24 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
       await supabase.from('evento_pedidos').update({ pago: false, transacao_id: null }).eq('id', p.id)
     }
     fetchTudo(); onMudou()
+  }
+
+  // Corrige nome/valor de um inscrito; se já estiver pago, ajusta o lançamento do caixa junto
+  async function salvarInscrito(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editIns || !editIns.nome.trim() || !+editIns.valor) return
+    const p = inscritos.find(x => x.id === editIns.id)
+    if (!p) { setEditIns(null); return }
+    const nome = editIns.nome.trim().toUpperCase()
+    const valor = +editIns.valor
+    await supabase.from('evento_pedidos').update({ nome, valor }).eq('id', p.id)
+    if (p.pago && p.transacao_id) {
+      await supabase.from('transacoes').update({
+        valor, valor_bruto: valor,
+        descricao: `${ev.nome} — ${nome} (inscrição)`,
+      }).eq('id', p.transacao_id)
+    }
+    setEditIns(null); fetchTudo(); onMudou()
   }
 
   async function delInscrito(p: Pedido) {
@@ -705,6 +724,19 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
           {filtrados.length === 0 && <p className="text-sm text-gray-300 py-2">Nenhum inscrito{busca ? ' encontrado' : ' ainda'}.</p>}
           {filtrados.map(p => {
             const cat = (p.item_nome ?? '').toUpperCase()
+            if (editIns && editIns.id === p.id) {
+              const ei = editIns
+              return (
+                <form key={p.id} onSubmit={salvarInscrito} className="flex flex-col sm:flex-row gap-2 py-2.5 border-b border-gray-50 last:border-0">
+                  <input value={ei.nome} onChange={e => setEditIns({ ...ei, nome: e.target.value })} className={inp + ' flex-1'} />
+                  <div className="flex gap-2">
+                    <input value={ei.valor} onChange={e => setEditIns({ ...ei, valor: e.target.value })} type="number" step="0.01" className={inp + ' w-28'} />
+                    <button className="text-white text-sm font-medium px-3 py-2 rounded-lg" style={{ background: '#16a34a' }}>Salvar</button>
+                    <button type="button" onClick={() => setEditIns(null)} className="border border-gray-200 text-gray-500 text-sm px-3 py-2 rounded-lg">Cancelar</button>
+                  </div>
+                </form>
+              )
+            }
             return (
               <div key={p.id} className="flex items-center justify-between gap-3 flex-wrap py-2.5 border-b border-gray-50 last:border-0">
                 <div className="min-w-0">
@@ -729,6 +761,8 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
                     style={p.pago ? { background: '#f0fdf4', color: '#16a34a' } : { background: '#fef2f2', color: '#dc2626' }}>
                     {p.pago ? 'Pago' : 'Não pago'}
                   </button>
+                  <button onClick={() => setEditIns({ id: p.id, nome: p.nome, valor: String(+p.valor) })}
+                    className="text-gray-300 hover:text-gray-700 p-1" title="Editar"><Pencil size={13} /></button>
                   <button onClick={() => delInscrito(p)} className="text-gray-300 hover:text-red-500 p-1"><X size={14} /></button>
                 </div>
               </div>
