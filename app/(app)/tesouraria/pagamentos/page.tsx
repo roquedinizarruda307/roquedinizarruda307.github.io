@@ -27,7 +27,10 @@ async function pagarPedido(pedidoId: string, tx: TxPedido): Promise<boolean> {
   const { data: atual, error: e0 } = await supabase.from('evento_pedidos').select('pago, transacao_id').eq('id', pedidoId).single()
   if (e0 || !atual) { alert('Não foi possível salvar o pagamento. Tente de novo.'); return false }
   if (atual.transacao_id) {                       // já tem entrada no caixa: só garante o "pago"
-    if (!atual.pago) await supabase.from('evento_pedidos').update({ pago: true }).eq('id', pedidoId)
+    if (!atual.pago) {
+      const { error } = await supabase.from('evento_pedidos').update({ pago: true }).eq('id', pedidoId)
+      if (error) { alert('Não foi possível salvar o pagamento. Tente de novo.'); return false }
+    }
     return true
   }
   const { error: e1 } = await supabase.from('evento_pedidos').update({ pago: true }).eq('id', pedidoId)
@@ -52,9 +55,16 @@ async function pagarPedido(pedidoId: string, tx: TxPedido): Promise<boolean> {
 async function despagarPedido(pedidoId: string): Promise<boolean> {
   const { data: atual, error: e0 } = await supabase.from('evento_pedidos').select('transacao_id').eq('id', pedidoId).single()
   if (e0 || !atual) { alert('Não foi possível salvar. Tente de novo.'); return false }
+  // 1) desmarca o pedido; 2) apaga a entrada do caixa; se 2 falhar, volta o pedido como estava
   const { error: e1 } = await supabase.from('evento_pedidos').update({ pago: false, transacao_id: null }).eq('id', pedidoId)
   if (e1) { alert('Não foi possível salvar. O caixa não foi alterado.'); return false }
-  if (atual.transacao_id) await supabase.from('transacoes').delete().eq('id', atual.transacao_id)
+  if (atual.transacao_id) {
+    const { error: e2 } = await supabase.from('transacoes').delete().eq('id', atual.transacao_id)
+    if (e2) {
+      await supabase.from('evento_pedidos').update({ pago: true, transacao_id: atual.transacao_id }).eq('id', pedidoId)
+      alert('Não foi possível tirar o lançamento do caixa. O pedido continua como pago.'); return false
+    }
+  }
   return true
 }
 
@@ -191,7 +201,8 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {visiveis.map((membro, i) => {
-        const status: StatusMens = mapa[membro.id]?.status ?? 'nao_pago'
+        // sem linha no mês = estado neutro (não é dívida); clicar num botão cria a linha
+        const status: StatusMens | undefined = mapa[membro.id]?.status
         const isSaving = saving === membro.id
         return (
           <div key={membro.id}
@@ -201,7 +212,10 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
                 style={{ background: '#f3f4f6', color: '#6b7280' }}>
                 {inicial(membro.nome)}
               </div>
-              <p className="font-bold text-gray-900 uppercase tracking-tight text-sm max-sm:leading-snug break-words min-w-0 sm:truncate">{membro.nome}</p>
+              <div className="min-w-0">
+                <p className="font-bold text-gray-900 uppercase tracking-tight text-sm max-sm:leading-snug break-words min-w-0 sm:truncate">{membro.nome}</p>
+                {!status && <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mt-0.5">Sem lançamento</p>}
+              </div>
             </div>
             <div className="flex items-center bg-gray-100 rounded-xl p-1 flex-shrink-0 w-full sm:w-auto">
               {opcoes.map(({ s, label, bg, color }) => {

@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { Plus, Search, X, AlertCircle, UserCheck, List } from 'lucide-react'
 import { ehMesCobrado, filtroEmAberto } from '@/lib/mensalidades'
 import PresencaMembro from '@/components/PresencaMembro'
+import { FREQUENCIA_MINIMA } from '@/lib/escrivao'
+import { calcularFrequencia, carregarSemestre, fmtPct, semestreAtual, type PresencaFreq, type ResultadoFreq } from '@/lib/frequencia'
 
 const inp = "w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-white focus:border-gray-400 transition-colors"
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -95,17 +97,28 @@ export default function MembrosPage() {
 
   useEffect(() => { fetchTudo() }, [])
 
+  const [frequencias, setFrequencias] = useState<Record<string, ResultadoFreq>>({})
+
   async function fetchTudo() {
     setLoading(true)
-    const [{ data: m }, { data: mens }, { data: anu }, { data: parts }, { data: peds }, { data: evs }] = await Promise.all([
+    const sem = semestreAtual()
+    const [{ data: m }, { data: mens }, { data: anu }, { data: parts }, { data: peds }, { data: evs }, freqSem] = await Promise.all([
       supabase.from('membros').select('*').order('nome'),
       filtroEmAberto(supabase.from('mensalidades').select('membro_id, valor')),
       supabase.from('anuidades').select('membro_id, valor, status').neq('status', 'pago'),
       supabase.from('evento_participantes').select('membro_id, qtd, pago, evento_id').eq('pago', false),
       supabase.from('evento_pedidos').select('membro_id, valor, pago').eq('pago', false),
       supabase.from('pagamentos_eventos').select('id, valor, tipo'),
+      carregarSemestre(sem.ano, sem.semestre),   // reuniões + presenças do semestre: uma consulta para a lista toda
     ])
     setMembros(m ?? [])
+
+    // Frequência do semestre atual (mesmo cálculo da ficha e da aba Frequência)
+    const presPorMembro = new Map<string, PresencaFreq[]>()
+    for (const p of freqSem.presencas) (presPorMembro.get(p.membro_id) ?? presPorMembro.set(p.membro_id, []).get(p.membro_id)!).push(p)
+    const fr: Record<string, ResultadoFreq> = {}
+    for (const mb of m ?? []) fr[mb.id] = calcularFrequencia(mb, freqSem.reunioes, presPorMembro.get(mb.id) ?? [])
+    setFrequencias(fr)
 
     const d: Record<string, number> = {}
     const add = (id: string | null, v: number) => { if (id) d[id] = (d[id] ?? 0) + v }
@@ -239,6 +252,8 @@ export default function MembrosPage() {
             const st = STATUS[m.status as Status] ?? STATUS.ativo
             const cat = CATEGORIA[m.status as Status] ?? CATEGORIA.ativo
             const divida = dividas[m.id] ?? 0
+            const fq = frequencias[m.id]
+            const fqBaixa = fq?.pct !== null && fq?.pct !== undefined && fq.pct < FREQUENCIA_MINIMA
             return (
               <div key={m.id} className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col gap-4 hover:shadow-md transition-shadow">
 
@@ -280,6 +295,16 @@ export default function MembrosPage() {
                         ? divida.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                         : 'Em dia'}
                     </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Frequência (semestre)</span>
+                    {!fq || fq.pct === null ? (
+                      <span className="text-sm font-bold text-gray-400">—</span>
+                    ) : (
+                      <span className="text-sm font-bold" style={{ color: fqBaixa ? '#c0392b' : '#16a34a' }}>
+                        {fmtPct(fq.pct)} <span className="text-xs font-semibold text-gray-400">({fq.presencas} de {fq.consideradas})</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 
