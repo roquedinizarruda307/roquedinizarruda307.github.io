@@ -36,7 +36,8 @@ export default function LoginPage() {
     if (!configured) { setErro('Configure o Supabase no .env.local primeiro.'); return }
     setLoading(true)
     setErro('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
+    // e-mail sem espaços e minúsculo (teclado do celular costuma pôr espaço/maiúscula)
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: senha })
     if (error) { setErro('E-mail ou senha incorretos.'); setLoading(false); return }
     router.replace('/tesouraria')
   }
@@ -61,7 +62,7 @@ export default function LoginPage() {
     setLoading(true)
     setErro('')
     const { data, error } = await supabase.auth.signUp({
-      email, password: senha,
+      email: email.trim().toLowerCase(), password: senha,
       options: { data: { nome } },
     })
     if (error) {
@@ -157,7 +158,7 @@ export default function LoginPage() {
 
         {/* ── FORM — painel dividido (Jacques + formulário) ── */}
         {phase === 'form' && (
-          <div style={{ position:'fixed', inset:0, zIndex:60, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(4,0,0,.75)', backdropFilter:'blur(12px)' }}
+          <div style={{ position:'fixed', inset:0, zIndex:60, display:'flex', alignItems:'center', justifyContent:'center', padding:16, overflowY:'auto', background:'rgba(4,0,0,.75)', backdropFilter:'blur(12px)' }}
             onClick={e => { if (e.target === e.currentTarget) setPhase('hero') }}>
             <div className="login-card" style={{ width:'100%', maxWidth:420, padding:'44px 40px', display:'flex', flexDirection:'column', justifyContent:'center', position:'relative', borderRadius:24, border:'1px solid rgba(255,255,255,.08)', boxShadow:'0 40px 120px rgba(0,0,0,.7)', animation:'cardIn .55s cubic-bezier(.22,1,.36,1) both', background:'#0c0606' }}>
 

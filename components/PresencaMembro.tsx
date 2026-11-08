@@ -12,6 +12,7 @@ const SITUACAO = {
   ausente:          { label: 'Ausente',         color: '#dc2626', bg: '#fef2f2' },
   justificada:      { label: 'Justificada',     color: '#a16207', bg: '#fefce8' },
   antes_da_entrada: { label: 'Antes da entrada', color: '#9ca3af', bg: '#f9fafb' },
+  fora_da_chamada:  { label: 'Fora da chamada', color: '#9ca3af', bg: '#f9fafb' },
 } as const
 
 // Bloco "Presença" da ficha do membro: frequência do semestre + lista de reuniões.
@@ -41,9 +42,9 @@ export default function PresencaMembro({ membro }: { membro: MembroFreq }) {
       <div className="flex items-center justify-between px-5 pt-4 pb-2">
         <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Presença</p>
         <div className="flex items-center gap-1">
-          <button onClick={() => mover(-1)} className="p-1 text-gray-400 hover:text-gray-700" title="Semestre anterior"><ChevronLeft size={14} /></button>
+          <button onClick={() => mover(-1)} className="p-3 -my-2 sm:p-1 sm:my-0 text-gray-400 hover:text-gray-700" title="Semestre anterior"><ChevronLeft size={14} /></button>
           <span className="text-xs text-gray-500">{rotuloSemestre(ano, semestre)}</span>
-          <button onClick={() => mover(1)} disabled={ehAtual} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30" title="Próximo semestre"><ChevronRight size={14} /></button>
+          <button onClick={() => mover(1)} disabled={ehAtual} className="p-3 -my-2 -mr-3 sm:p-1 sm:my-0 sm:mr-0 text-gray-400 hover:text-gray-700 disabled:opacity-30" title="Próximo semestre"><ChevronRight size={14} /></button>
         </div>
       </div>
       <div className="px-5 pb-4">
@@ -67,7 +68,7 @@ export default function PresencaMembro({ membro }: { membro: MembroFreq }) {
                 return (
                   <div key={r.id} className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-lg bg-gray-50">
                     <div className="min-w-0">
-                      <p className="text-sm text-gray-700 truncate">{r.titulo}</p>
+                      <p className="text-sm text-gray-700 max-sm:leading-snug break-words sm:truncate">{r.titulo}</p>
                       <p className="text-[11px] text-gray-400">{fmtData(r.data)}</p>
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded flex-shrink-0" style={{ color: s.color, background: s.bg }}>{s.label}</span>

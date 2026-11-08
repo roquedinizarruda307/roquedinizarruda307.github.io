@@ -62,7 +62,7 @@ export type Membro = {
   email: string
   telefone: string
   cargo: string
-  status: 'ativo' | 'inativo'
+  status: 'ativo' | 'senior' | 'afastado'
   data_entrada: string
   created_at: string
 }

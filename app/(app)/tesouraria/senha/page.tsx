@@ -35,7 +35,7 @@ export default function TrocarSenhaPage() {
   }
 
   return (
-    <div className="px-8 py-8 max-w-xl">
+    <div className="px-4 py-4 sm:px-8 sm:py-8 max-w-xl">
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-6 space-y-4">
         <div className="flex items-center gap-2.5">
           <KeyRound size={18} className="text-gray-500" />

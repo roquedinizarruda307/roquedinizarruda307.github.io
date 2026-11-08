@@ -110,7 +110,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
     <div className="space-y-4">
 
       {/* Toolbar */}
-      <div className="bg-white rounded-xl border border-gray-100 px-5 py-4 flex items-center gap-3 flex-wrap">
+      <div className="bg-white rounded-xl border border-gray-100 px-4 sm:px-5 py-4 flex items-center gap-3 flex-wrap">
         <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
           <div className="relative">
             <select value={mes} onChange={e => setMes(+e.target.value)}
@@ -202,8 +202,44 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
         </div>
       )}
 
+      {/* Celular: um cartão por lançamento (a tabela abaixo fica só no computador) */}
+      <div className="md:hidden bg-white rounded-xl border border-gray-100 overflow-hidden">
+        {loading ? (
+          <div className="py-16 text-center text-sm text-gray-300">Carregando...</div>
+        ) : rows.length === 0 ? (
+          <div className="py-16 px-4 text-center text-sm text-gray-300">Sem registros neste período.</div>
+        ) : rows.map((r, i) => (
+          <div key={r.id} className={`px-4 py-3.5 ${i < rows.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            <div className="flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-800 leading-snug break-words">{r.descricao}</p>
+                <p className="text-xs text-gray-400 mt-1 break-words">
+                  {new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR')}{r.origem_destino ? ` · ${r.origem_destino}` : ''}
+                  {urlSegura(r.recibo_url) && <> · <a href={urlSegura(r.recibo_url)!} target="_blank" rel="noreferrer" className="underline" style={{ color: cor }}>Recibo</a></>}
+                </p>
+              </div>
+              <div className="flex flex-col items-end flex-shrink-0">
+                <p className="text-sm font-semibold whitespace-nowrap pt-0.5" style={{ color: cor }}>
+                  {isE ? '+' : '-'}{fmt(bruto(r))}
+                </p>
+                <div className="flex items-center gap-1 -mr-2.5 -mb-2.5">
+                  <button onClick={() => editar(r)} title="Editar" aria-label="Editar"
+                    className="w-10 h-10 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                    <Pencil size={15} />
+                  </button>
+                  <button onClick={() => excluir(r)} title="Excluir" aria-label="Excluir"
+                    className="w-10 h-10 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Tabela */}
-      <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
+      <div className="hidden md:block bg-white rounded-xl border border-gray-100 overflow-x-auto">
         <div className="min-w-[640px]">
         <div className="grid grid-cols-[110px_1fr_140px_70px_120px_80px] px-6 py-3 border-b border-gray-100">
           {['Data','Descrição','Origem/Destino','Recibo','Valor',''].map((h, idx) => (

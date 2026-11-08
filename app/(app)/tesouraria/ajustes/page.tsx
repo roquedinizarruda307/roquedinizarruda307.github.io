@@ -109,7 +109,7 @@ export default function AjustesPage() {
   if (carregando) return <div className="p-7 text-sm text-gray-300">Carregando...</div>
   if (papel !== 'dono') {
     return (
-      <div className="p-7 max-w-2xl">
+      <div className="p-4 sm:p-7 max-w-2xl">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
           <p className="text-lg font-black text-gray-900 mb-1">Acesso restrito</p>
           <p className="text-sm text-gray-400">Somente a conta dona do sistema pode acessar as configurações.</p>
@@ -119,7 +119,7 @@ export default function AjustesPage() {
   }
 
   return (
-    <div className="p-7 max-w-2xl space-y-5">
+    <div className="p-4 sm:p-7 max-w-2xl space-y-5">
       <div>
         <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: '#c0392b' }}>Ajustes</p>
         <h1 className="text-2xl font-black text-gray-900">Calibrar o caixa</h1>
@@ -129,7 +129,7 @@ export default function AjustesPage() {
       </div>
 
       {/* Saldo atual */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-5 flex items-center gap-4">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 sm:px-6 py-5 flex items-center gap-4">
         <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: '#f3f4f6' }}>
           <Wallet size={18} className="text-gray-500" />
         </div>
@@ -142,7 +142,7 @@ export default function AjustesPage() {
       </div>
 
       {/* Form de calibragem */}
-      <form onSubmit={calibrar} className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-6 space-y-4">
+      <form onSubmit={calibrar} className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 sm:px-6 py-6 space-y-4">
         <div>
           <label className="block text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-2">
             Saldo real do caixa
@@ -181,7 +181,7 @@ export default function AjustesPage() {
 
       {/* Solicitações pendentes */}
       {(
-        <div className="bg-white rounded-2xl border shadow-sm px-6 py-6 space-y-4 mt-2"
+        <div className="bg-white rounded-2xl border shadow-sm px-4 sm:px-6 py-6 space-y-4 mt-2"
           style={{ borderColor: pendentes.length ? '#fde2e2' : '#f3f4f6' }}>
           <div>
             <h2 className="text-base font-black text-gray-900 flex items-center gap-2">
@@ -199,7 +199,7 @@ export default function AjustesPage() {
             <p className="text-sm text-gray-300">Nenhuma solicitação pendente.</p>
           ) : pendentes.map(p => (
             <div key={p.email} className="flex items-center justify-between gap-3 flex-wrap bg-gray-50 rounded-xl px-4 py-3">
-              <span className="text-sm font-medium text-gray-800 min-w-0 truncate">{p.email}</span>
+              <span className="text-sm font-medium text-gray-800 min-w-0 break-all sm:break-normal sm:truncate">{p.email}</span>
               <div className="flex items-center gap-2">
                 <button onClick={() => aprovar(p.email, 'admin')}
                   className="text-xs font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: '#16a34a' }}>
@@ -220,7 +220,7 @@ export default function AjustesPage() {
       )}
 
       {/* Contas ativas e níveis */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-6 space-y-4 mt-2">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 sm:px-6 py-6 space-y-4 mt-2">
         <div className="flex items-center gap-2.5">
           <Users size={18} className="text-gray-500" />
           <div>
@@ -240,7 +240,7 @@ export default function AjustesPage() {
             return (
               <div key={p.email} className="flex items-center justify-between gap-3 flex-wrap bg-gray-50 rounded-lg px-3.5 py-2.5">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-sm text-gray-700 truncate">{p.email}</span>
+                  <span className="text-sm text-gray-700 min-w-0 break-all sm:break-normal sm:truncate">{p.email}</span>
                   {ehEu && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#f3f4f6', color: '#6b7280' }}>VOCÊ</span>}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -249,13 +249,13 @@ export default function AjustesPage() {
                       style={{ background: nivel.bg, color: nivel.color }}>{nivel.label}</span>
                   ) : (
                     <select value={p.papel} onChange={e => mudarNivel(p.email, e.target.value)}
-                      className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border-0 cursor-pointer appearance-none text-center"
+                      className="text-[11px] font-bold uppercase tracking-wide px-3 py-2.5 sm:px-2.5 sm:py-1.5 rounded-lg border-0 cursor-pointer appearance-none text-center"
                       style={{ background: nivel.bg, color: nivel.color }}>
                       {NIVEIS.map(n => <option key={n.v} value={n.v}>{n.label}</option>)}
                     </select>
                   )}
                   {!ehEu && (
-                    <button onClick={() => removerConta(p.email)} className="text-gray-300 hover:text-red-500" title="Remover acesso">
+                    <button onClick={() => removerConta(p.email)} className="p-3 -my-2 ml-1 sm:p-0 sm:my-0 sm:ml-0 text-gray-300 hover:text-red-500" title="Remover acesso" aria-label="Remover acesso">
                       <Trash2 size={15} />
                     </button>
                   )}

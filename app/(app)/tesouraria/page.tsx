@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MESES_COBRADOS } from '@/lib/mensalidades'
+import { filtroEmAberto } from '@/lib/mensalidades'
 import { Wallet, TrendingUp, TrendingDown, AlertCircle, Users } from 'lucide-react'
 
 function fmt(v: number) {
@@ -33,7 +33,7 @@ export default function Home() {
         await Promise.all([
           supabase.from('transacoes').select('tipo,valor'),
           supabase.from('transacoes').select('tipo,valor').gte('data',`${ano}-${m}-01`).lt('data',`${pa}-${pm2}-01`),
-          supabase.from('mensalidades').select('membro_id,valor').eq('status','nao_pago').in('mes',[...MESES_COBRADOS]),
+          filtroEmAberto(supabase.from('mensalidades').select('membro_id,valor')),
           supabase.from('membros').select('id').eq('status','ativo'),
           supabase.from('anuidades').select('valor').eq('status','pendente'),
           supabase.from('pagamentos_eventos').select('valor').eq('status','pendente'),
@@ -58,8 +58,8 @@ export default function Home() {
       if (memIds.length) {
         const { data: nomes } = await supabase.from('membros').select('id,nome').in('id', memIds.slice(0,20))
         const nomeMap = Object.fromEntries((nomes??[]).map(n=>[n.id,n.nome]))
-        const { data: mensAtrasadas } = await supabase.from('mensalidades')
-          .select('id,membro_id,mes,ano,valor').eq('status','nao_pago').in('mes',[...MESES_COBRADOS])
+        const { data: mensAtrasadas } = await filtroEmAberto(supabase.from('mensalidades')
+          .select('id,membro_id,mes,ano,valor'))
           .order('ano').order('mes').limit(10)
         for (const r of mensAtrasadas??[]) {
           notifList.push({
@@ -108,7 +108,7 @@ export default function Home() {
     <div>
 
       {/* Conteúdo do dashboard */}
-      <div className="p-7 space-y-5 max-w-6xl">
+      <div className="p-4 sm:p-7 space-y-5 max-w-6xl">
 
       {/* 5 Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

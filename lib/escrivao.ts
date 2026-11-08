@@ -13,3 +13,14 @@ export const FREQUENCIA_MINIMA = 75
 export const CAMPO_FALTA_JUSTIFICADA: string | null = null
 
 export const naChamada = (m: { status?: string | null }) => STATUS_NA_CHAMADA.includes(String(m.status ?? ''))
+
+/**
+ * Regra única da chamada/frequência: o membro aparece numa reunião se já tem
+ * presença gravada nela, OU se está na chamada (STATUS_NA_CHAMADA) e já tinha
+ * entrado até a data da reunião. Sem presença e antes da entrada: não aparece.
+ */
+export function aparecaNaReuniao(m: { status?: string | null; data_entrada?: string | null }, temPresenca: boolean, dataReuniao: string) {
+  if (temPresenca) return true
+  const entrada = m.data_entrada ? String(m.data_entrada).slice(0, 10) : ''
+  return naChamada(m) && (!entrada || entrada <= dataReuniao)
+}

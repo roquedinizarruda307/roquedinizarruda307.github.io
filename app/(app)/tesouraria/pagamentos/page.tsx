@@ -5,7 +5,7 @@ import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check, Trash2, Pencil } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { liquidoEntrada, comTaxaSaida } from '@/lib/taxas'
-import { MESES_COBRADOS, ehMesCobrado, mesCobradoMaisProximo, pagaMensalidade } from '@/lib/mensalidades'
+import { ehMesCobrado, mesCobradoMaisProximo, pagaMensalidade, entrouAteAno, aparecaNoMes, ehPendencia, filtroEmAberto } from '@/lib/mensalidades'
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 const ANO_ATUAL = new Date().getFullYear()
@@ -19,19 +19,43 @@ function inicial(nome: string) {
   return (nome?.trim()?.[0] ?? '?').toUpperCase()
 }
 
-// Regras de cobrança: membro só é cobrado a partir do mês/ano em que entrou;
-// só 'ativo' gera dívida nova; senior/afastado não (as já registradas continuam valendo)
-function entrouAte(m: Membro, mes: number, ano: number) {
-  if (!m.data_entrada) return true
-  const y = +String(m.data_entrada).slice(0, 4), mo = +String(m.data_entrada).slice(5, 7)
-  if (!y || !mo) return true
-  return y < ano || (y === ano && mo <= mes)
+// ─── Pedido de evento: pago / não pago com o caixa (sem duplicar) ─────────────
+// Ordem segura: marca o pedido primeiro (checando erro) e só então mexe no caixa.
+type TxPedido = { valor: number; valor_bruto?: number; descricao: string }
+
+async function pagarPedido(pedidoId: string, tx: TxPedido): Promise<boolean> {
+  const { data: atual, error: e0 } = await supabase.from('evento_pedidos').select('pago, transacao_id').eq('id', pedidoId).single()
+  if (e0 || !atual) { alert('Não foi possível salvar o pagamento. Tente de novo.'); return false }
+  if (atual.transacao_id) {                       // já tem entrada no caixa: só garante o "pago"
+    if (!atual.pago) await supabase.from('evento_pedidos').update({ pago: true }).eq('id', pedidoId)
+    return true
+  }
+  const { error: e1 } = await supabase.from('evento_pedidos').update({ pago: true }).eq('id', pedidoId)
+  if (e1) { alert('Não foi possível salvar o pagamento. Nada foi lançado no caixa.'); return false }
+  const { data: nova, error: e2 } = await supabase.from('transacoes').insert([{
+    tipo: 'entrada', valor: tx.valor, ...(tx.valor_bruto !== undefined ? { valor_bruto: tx.valor_bruto } : {}),
+    data: new Date().toISOString().slice(0, 10), categoria: 'Evento', descricao: tx.descricao,
+  }]).select('id').single()
+  if (e2 || !nova) {
+    await supabase.from('evento_pedidos').update({ pago: false }).eq('id', pedidoId)
+    alert('Não foi possível lançar no caixa. O pedido continua como não pago.'); return false
+  }
+  const { error: e3 } = await supabase.from('evento_pedidos').update({ transacao_id: nova.id }).eq('id', pedidoId)
+  if (e3) {
+    await supabase.from('transacoes').delete().eq('id', nova.id)
+    await supabase.from('evento_pedidos').update({ pago: false }).eq('id', pedidoId)
+    alert('Não foi possível vincular o lançamento. Nada foi alterado.'); return false
+  }
+  return true
 }
 
-function entrouAteAno(m: Membro, ano: number) {
-  if (!m.data_entrada) return true
-  const y = +String(m.data_entrada).slice(0, 4)
-  return !y || y <= ano
+async function despagarPedido(pedidoId: string): Promise<boolean> {
+  const { data: atual, error: e0 } = await supabase.from('evento_pedidos').select('transacao_id').eq('id', pedidoId).single()
+  if (e0 || !atual) { alert('Não foi possível salvar. Tente de novo.'); return false }
+  const { error: e1 } = await supabase.from('evento_pedidos').update({ pago: false, transacao_id: null }).eq('id', pedidoId)
+  if (e1) { alert('Não foi possível salvar. O caixa não foi alterado.'); return false }
+  if (atual.transacao_id) await supabase.from('transacoes').delete().eq('id', atual.transacao_id)
+  return true
 }
 
 // ─── Tab: Mensalidades ────────────────────────────────────────────────────────
@@ -40,6 +64,9 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
   const [mapa, setMapa] = useState<Record<string, { id?: string; status: StatusMens }>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const travaRef = useRef(false)   // trava síncrona contra cliques muito rápidos
+  // mensalidades pagas sem entrada vinculada no caixa: não criar/apagar entrada para elas
+  const [pagasSemCaixa, setPagasSemCaixa] = useState<Set<string>>(new Set())
 
   const fetchDados = useCallback(async () => {
     setLoading(true)
@@ -50,11 +77,15 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
     const novoMapa: Record<string, { id?: string; status: StatusMens }> = {}
     for (const reg of r ?? []) novoMapa[reg.membro_id] = { id: reg.id, status: reg.status as StatusMens }
 
-    // Rede de segurança: remove entradas de mensalidades que não estão mais "pago"
-    const naoPagas = (r ?? []).filter(reg => reg.status !== 'pago').map(reg => reg.id)
-    if (naoPagas.length) {
-      await supabase.from('transacoes').delete().in('mensalidade_id', naoPagas)
+    // Pagas SEM entrada própria no caixa (ex.: quitadas num lançamento agrupado).
+    // Só leitura: abrir/trocar de mês não altera nada no banco.
+    const pagasIds = (r ?? []).filter(reg => reg.status === 'pago').map(reg => reg.id)
+    const semCaixa = new Set<string>(pagasIds)
+    if (pagasIds.length) {
+      const { data: txs } = await supabase.from('transacoes').select('mensalidade_id').in('mensalidade_id', pagasIds)
+      for (const t of txs ?? []) semCaixa.delete(t.mensalidade_id)
     }
+    setPagasSemCaixa(semCaixa)
 
     setMembros(m ?? [])
     setMapa(novoMapa)
@@ -64,7 +95,7 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
   useEffect(() => { fetchDados() }, [fetchDados])
 
   // Quem aparece no mês: quem já tem registro nele, ou está ativo e já tinha entrado
-  const visiveis = membros.filter(m => mapa[m.id] || (pagaMensalidade(m) && entrouAte(m, mes, ano)))
+  const visiveis = membros.filter(m => aparecaNoMes(m, !!mapa[m.id], mes, ano))
 
   // disponibiliza dados pro relatório
   useEffect(() => {
@@ -72,7 +103,8 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
       const label = { pago: 'Pago', nao_pago: 'Não pago', isento: 'Isento' }
       const linhas: string[][] = [['Membro', 'Status', `Mensalidade ${MESES_C[mes-1]}/${ano}`]]
       for (const m of visiveis) {
-        const st = mapa[m.id]?.status ?? 'nao_pago'
+        const st = mapa[m.id]?.status
+        if (!st) { linhas.push([m.nome, 'Sem lançamento', '—']); continue }
         linhas.push([m.nome, label[st], st === 'nao_pago' ? 'R$ 20,00' : '—'])
       }
       return linhas
@@ -103,31 +135,47 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
   }
 
   async function setStatus(membroId: string, prox: StatusMens) {
-    if (mapa[membroId]?.status === prox) return
+    if (travaRef.current) return                    // um clique por vez
+    if (mapa[membroId]?.status === prox) return     // já está nesse status: nada a fazer
     const membro = membros.find(m => m.id === membroId)!
     let id = mapa[membroId]?.id
+    const semCaixa = !!id && pagasSemCaixa.has(id)
+    if (semCaixa && mapa[membroId]?.status === 'pago' &&
+        !confirm(`${membro.nome}: este mês foi pago sem entrada própria no caixa (provavelmente num lançamento agrupado). ` +
+                 `Mudar o status NÃO altera o caixa. Continuar?`)) return
 
+    travaRef.current = true
+    const anterior = mapa[membroId]
     // Atualiza a UI na hora (otimista)
     setMapa(prev => ({ ...prev, [membroId]: { ...prev[membroId], status: prox } }))
     setSaving(membroId)
 
-    // Salva a mensalidade (escrita crítica)
+    // Salva a mensalidade (escrita crítica). Se falhar, PARA antes de mexer no caixa.
+    let erro = false
     if (id) {
-      await supabase.from('mensalidades').update({ status: prox, data_pagamento: prox === 'pago' ? new Date().toISOString() : null }).eq('id', id)
+      const { error } = await supabase.from('mensalidades').update({ status: prox, data_pagamento: prox === 'pago' ? new Date().toISOString() : null }).eq('id', id)
+      erro = !!error
     } else {
-      const { data } = await supabase.from('mensalidades').insert([{
+      const { data, error } = await supabase.from('mensalidades').insert([{
         membro_id: membroId, mes, ano, valor: 20, status: prox,
         data_pagamento: prox === 'pago' ? new Date().toISOString() : null,
       }]).select('id').single()
+      erro = !!error || !data
       if (data) { id = data.id; setMapa(prev => ({ ...prev, [membroId]: { id: data.id, status: prox } })) }
     }
-    setSaving(null)   // libera o botão já — o resto roda em segundo plano
-
-    // Caixa + resumo em segundo plano (não trava a interface)
-    if (id) {
-      if (prox === 'pago') gerarReceita(id, membro)
-      else removerReceita(id)
+    if (erro) {
+      setMapa(prev => { const n = { ...prev }; if (anterior) n[membroId] = anterior; else delete n[membroId]; return n })
+      alert('Não foi possível salvar a mensalidade. Nada foi alterado no caixa.')
+      travaRef.current = false; setSaving(null); return
     }
+    // Caixa: aguarda terminar antes de liberar outro clique (evita entrada duplicada).
+    // Mensalidade quitada em lançamento agrupado não ganha nem perde entrada própria.
+    if (id && !semCaixa) {
+      if (prox === 'pago') await gerarReceita(id, membro)
+      else await removerReceita(id)
+    }
+    travaRef.current = false
+    setSaving(null)
     onMudou()
   }
 
@@ -147,20 +195,20 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
         const isSaving = saving === membro.id
         return (
           <div key={membro.id}
-            className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors ${i < visiveis.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            className={`flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors ${i < visiveis.length - 1 ? 'border-b border-gray-50' : ''}`}>
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm"
                 style={{ background: '#f3f4f6', color: '#6b7280' }}>
                 {inicial(membro.nome)}
               </div>
-              <p className="font-bold text-gray-900 uppercase tracking-tight text-sm truncate">{membro.nome}</p>
+              <p className="font-bold text-gray-900 uppercase tracking-tight text-sm max-sm:leading-snug break-words min-w-0 sm:truncate">{membro.nome}</p>
             </div>
-            <div className="flex items-center bg-gray-100 rounded-xl p-1 flex-shrink-0">
+            <div className="flex items-center bg-gray-100 rounded-xl p-1 flex-shrink-0 w-full sm:w-auto">
               {opcoes.map(({ s, label, bg, color }) => {
                 const active = status === s
                 return (
                   <button key={s} onClick={() => setStatus(membro.id, s)} disabled={isSaving}
-                    className="px-3 sm:px-4 py-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wide rounded-lg transition-all"
+                    className="flex-1 sm:flex-none min-h-[40px] sm:min-h-0 px-2 sm:px-4 py-1.5 text-xs font-bold uppercase tracking-wide rounded-lg transition-all"
                     style={active
                       ? { background: bg, color, boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }
                       : { background: 'transparent', color: '#9ca3af' }}>
@@ -248,7 +296,7 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm"
                 style={{ background: '#f3f4f6', color: '#6b7280' }}>{inicial(m.nome)}</div>
-              <p className="font-bold text-gray-900 uppercase tracking-tight text-sm truncate">{m.nome}</p>
+              <p className="font-bold text-gray-900 uppercase tracking-tight text-sm max-sm:leading-snug break-words sm:truncate">{m.nome}</p>
             </div>
             <button onClick={() => ciclar(m.id)} disabled={saving === m.id}
               className="text-[11px] sm:text-xs font-bold uppercase tracking-wide px-4 py-2 rounded-lg flex-shrink-0 transition-colors"
@@ -277,6 +325,7 @@ function resumoItens(p: Pedido): string {
 function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: Membro[]; onMudou: () => void; onExcluir: () => void }) {
   const [itens, setItens] = useState<ItemEv[]>([])
   const [pedidos, setPedidos] = useState<Pedido[]>([])
+  const travaPedidoRef = useRef(false)   // trava síncrona: um "pago" por vez
   const [loading, setLoading] = useState(true)
   // form de item
   const [itemNome, setItemNome] = useState('')
@@ -350,21 +399,17 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
   }
 
   async function togglePago(p: Pedido) {
+    if (travaPedidoRef.current) return            // um clique por vez (evita 2 lançamentos)
+    travaPedidoRef.current = true
     const novo = !p.pago
     setPedidos(prev => prev.map(x => x.id === p.id ? { ...x, pago: novo } : x))
-    if (novo) {
-      // lança no caixa
-      const resumo = resumoItens(p)
-      const { data } = await supabase.from('transacoes').insert([{
-        tipo: 'entrada', valor: liquidoEntrada(+p.valor), valor_bruto: +p.valor, data: new Date().toISOString().slice(0, 10),
-        categoria: 'Evento', descricao: `${ev.nome} — ${p.nome}${resumo ? ` (${resumo})` : ''}`,
-      }]).select('id').single()
-      await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', p.id)
-    } else {
-      if (p.transacao_id) await supabase.from('transacoes').delete().eq('id', p.transacao_id)
-      await supabase.from('evento_pedidos').update({ pago: false, transacao_id: null }).eq('id', p.id)
-    }
-    onMudou()
+    const resumo = resumoItens(p)
+    const ok = novo
+      ? await pagarPedido(p.id, { valor: liquidoEntrada(+p.valor), valor_bruto: +p.valor, descricao: `${ev.nome} — ${p.nome}${resumo ? ` (${resumo})` : ''}` })
+      : await despagarPedido(p.id)
+    if (!ok) setPedidos(prev => prev.map(x => x.id === p.id ? { ...x, pago: p.pago } : x))
+    travaPedidoRef.current = false
+    fetchTudo(); onMudou()
   }
 
   async function toggleRetirado(p: Pedido) {
@@ -569,6 +614,7 @@ const catCor = (c: string) => CAT_CORES[c] ?? { bg: '#f3f4f6', color: '#6b7280' 
 
 function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () => void; onExcluir: () => void }) {
   const [inscritos, setInscritos] = useState<Pedido[]>([])
+  const travaPedidoRef = useRef(false)   // trava síncrona: um "pago" por vez
   const [txs, setTxs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
@@ -607,18 +653,15 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
   const filtrados = inscritos.filter(p => !busca || p.nome.toLowerCase().includes(busca.toLowerCase()))
 
   async function togglePago(p: Pedido) {
+    if (travaPedidoRef.current) return            // um clique por vez (evita 2 lançamentos)
+    travaPedidoRef.current = true
     const novo = !p.pago
     setInscritos(prev => prev.map(x => x.id === p.id ? { ...x, pago: novo } : x))
-    if (novo) {
-      const { data } = await supabase.from('transacoes').insert([{
-        tipo: 'entrada', valor: liquidoEntrada(+p.valor), valor_bruto: +p.valor, data: new Date().toISOString().slice(0, 10),
-        categoria: 'Evento', descricao: `${ev.nome} — ${p.nome} (inscrição)`,
-      }]).select('id').single()
-      await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', p.id)
-    } else {
-      if (p.transacao_id) await supabase.from('transacoes').delete().eq('id', p.transacao_id)
-      await supabase.from('evento_pedidos').update({ pago: false, transacao_id: null }).eq('id', p.id)
-    }
+    const ok = novo
+      ? await pagarPedido(p.id, { valor: liquidoEntrada(+p.valor), valor_bruto: +p.valor, descricao: `${ev.nome} — ${p.nome} (inscrição)` })
+      : await despagarPedido(p.id)
+    if (!ok) setInscritos(prev => prev.map(x => x.id === p.id ? { ...x, pago: p.pago } : x))
+    travaPedidoRef.current = false
     fetchTudo(); onMudou()
   }
 
@@ -1006,12 +1049,12 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
           <div key={ev.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {/* Cabeçalho do evento */}
             <div onClick={() => setExpandido(aberto ? null : ev.id)}
-              className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left cursor-pointer">
+              className="w-full flex items-center justify-between gap-2 sm:gap-0 px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors text-left cursor-pointer">
               <div className="flex items-center gap-3 min-w-0">
                 {ev.tipo === 'ingresso' && <Ticket size={16} className="text-gray-400 flex-shrink-0" />}
                 {(ev.tipo === 'lista' || ev.tipo === 'inscricao') && <Ticket size={16} className="text-gray-400 flex-shrink-0" />}
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-gray-800 truncate">{ev.nome}</p>
+                  <p className="text-sm font-bold text-gray-800 max-sm:leading-snug break-words sm:truncate">{ev.nome}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {new Date(ev.data + 'T00:00:00').toLocaleDateString('pt-BR')}
                     {ev.tipo === 'inscricao'
@@ -1050,7 +1093,7 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs" style={{ background: '#f3f4f6', color: '#6b7280' }}>{inicial(m?.nome ?? '?')}</div>
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-gray-800 truncate">{m?.nome ?? '—'}</p>
+                          <p className="text-sm font-semibold text-gray-800 max-sm:leading-snug break-words sm:truncate">{m?.nome ?? '—'}</p>
                           <p className="text-xs" style={{ color: p.pago ? '#16a34a' : '#dc2626' }}>
                             {p.pago ? 'Pago' : `Deve ${fmt(valorDevido(ev, p))}`}
                           </p>
@@ -1133,16 +1176,14 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
   const [loading, setLoading] = useState(true)
   const [aberto, setAberto] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
+  const travaRef = useRef(false)   // trava síncrona contra cliques muito rápidos
 
   const fetchDados = useCallback(async () => {
     setLoading(true)
-    const hoje = new Date()
-    const anoAtual = hoje.getFullYear()
-    const mesAtual = hoje.getMonth() + 1
 
     const [{ data: ms }, { data: mens }, { data: anu }, { data: evs }, { data: parts }, { data: peds }] = await Promise.all([
       supabase.from('membros').select('*').order('nome'),
-      supabase.from('mensalidades').select('id, membro_id, mes, ano, status').eq('ano', anoAtual),
+      filtroEmAberto(supabase.from('mensalidades').select('id, membro_id, mes, ano, valor, status')).order('ano').order('mes'),
       supabase.from('anuidades').select('id, membro_id, ano, valor, status').neq('status', 'pago'),
       supabase.from('pagamentos_eventos').select('id, nome, valor, tipo'),
       supabase.from('evento_participantes').select('*').eq('pago', false),
@@ -1152,19 +1193,12 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
     const mapa: Record<string, Pendencia[]> = {}
     const add = (mid: string, p: Pendencia) => { (mapa[mid] = mapa[mid] ?? []).push(p) }
 
-    // Mensalidades: meses já decorridos do ano sem "pago" nem "isento"
-    const quitadas = new Set((mens ?? []).filter(r => r.status === 'pago' || r.status === 'isento').map(r => `${r.membro_id}-${r.mes}`))
-    const regMens: Record<string, string> = {}
-    for (const r of mens ?? []) regMens[`${r.membro_id}-${r.mes}`] = r.id
-    for (const m of ms ?? [])
-      for (const mes of MESES_COBRADOS.filter(x => x <= mesAtual)) {
-        if (quitadas.has(`${m.id}-${mes}`)) continue
-        // sem registro no mês, só cobra quem estava ativo e já tinha entrado
-        const temRegistro = regMens[`${m.id}-${mes}`] !== undefined
-        if (!temRegistro && (!pagaMensalidade(m) || !entrouAte(m, mes, anoAtual))) continue
-        add(m.id, { key: `mens-${m.id}-${mes}`, tipo: 'Mensalidade', ref: `${MESES_C[mes - 1]}/${anoAtual}`, valor: 20,
-          dados: { t: 'mensalidade', id: regMens[`${m.id}-${mes}`], mes, ano: anoAtual } })
-      }
+    // Mensalidades: regra única — só linhas lançadas 'nao_pago', fora de jan/jul (lib/mensalidades)
+    for (const r of mens ?? []) {
+      if (!ehPendencia(r)) continue
+      add(r.membro_id, { key: `mens-${r.id}`, tipo: 'Mensalidade', ref: `${MESES_C[r.mes - 1]}/${r.ano}`, valor: +r.valor,
+        dados: { t: 'mensalidade', id: r.id, mes: r.mes, ano: r.ano } })
+    }
 
     // Anuidades em aberto (qualquer ano)
     for (const a of anu ?? [])
@@ -1209,13 +1243,16 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
     const d = p.dados
     if (d.t === 'mensalidade') {
       let id = d.id
+      // salva a mensalidade; se falhar, PARA antes de mexer no caixa
       if (id) {
-        await supabase.from('mensalidades').update({ status: 'pago', data_pagamento: agora }).eq('id', id)
+        const { error } = await supabase.from('mensalidades').update({ status: 'pago', data_pagamento: agora }).eq('id', id)
+        if (error) { alert(`Não foi possível dar baixa (${p.ref}). Nada foi lançado no caixa.`); return false }
       } else {
-        const { data } = await supabase.from('mensalidades').insert([{
+        const { data, error } = await supabase.from('mensalidades').insert([{
           membro_id: membro.id, mes: d.mes, ano: d.ano, valor: 20, status: 'pago', data_pagamento: agora,
         }]).select('id').single()
-        id = data?.id
+        if (error || !data) { alert(`Não foi possível dar baixa (${p.ref}). Nada foi lançado no caixa.`); return false }
+        id = data.id
       }
       if (id) {
         const { data: existe } = await supabase.from('transacoes').select('id').eq('mensalidade_id', id).limit(1)
@@ -1225,23 +1262,25 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
         }])
       }
     } else if (d.t === 'anuidade') {
-      await supabase.from('anuidades').update({ status: 'pago', data_pagamento: agora }).eq('id', d.id)
+      const { error } = await supabase.from('anuidades').update({ status: 'pago', data_pagamento: agora }).eq('id', d.id)
+      if (error) { alert(`Não foi possível dar baixa (anuidade ${p.ref}).`); return false }
     } else if (d.t === 'participante') {
-      await supabase.from('evento_participantes').update({ pago: true }).eq('id', d.id)
+      const { error } = await supabase.from('evento_participantes').update({ pago: true }).eq('id', d.id)
+      if (error) { alert(`Não foi possível dar baixa (${p.ref}).`); return false }
     } else {
-      const { data } = await supabase.from('transacoes').insert([{
-        tipo: 'entrada', valor: p.valor, data: hoje, categoria: 'Evento', descricao: d.descricao,
-      }]).select('id').single()
-      await supabase.from('evento_pedidos').update({ pago: true, transacao_id: data?.id ?? null }).eq('id', d.id)
+      if (!await pagarPedido(d.id, { valor: p.valor, descricao: d.descricao })) return false
     }
     // remove da lista na tela
     setPorMembro(prev => ({ ...prev, [membro.id]: (prev[membro.id] ?? []).filter(x => x.key !== p.key) }))
+    return true
   }
 
   async function darBaixa(membro: Membro, p: Pendencia) {
-    if (saving) return
+    if (travaRef.current) return
+    travaRef.current = true
     setSaving(p.key)
     await baixar(membro, p)
+    travaRef.current = false
     setSaving(null)
     onMudou()
   }
@@ -1249,9 +1288,12 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
   async function darBaixaTudo(membro: Membro) {
     const pends = porMembro[membro.id] ?? []
     const total = pends.reduce((s, p) => s + p.valor, 0)
+    if (travaRef.current) return
     if (!confirm(`Dar baixa em todas as ${pends.length} pendências de ${membro.nome} (${fmt(total)})?`)) return
+    travaRef.current = true
     setSaving(`tudo-${membro.id}`)
-    for (const p of pends) await baixar(membro, p)
+    for (const p of pends) if (!await baixar(membro, p)) break   // para no primeiro erro
+    travaRef.current = false
     setSaving(null)
     onMudou()
   }
@@ -1287,7 +1329,7 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
                     <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm"
                       style={{ background: '#f3f4f6', color: '#6b7280' }}>{inicial(m.nome)}</div>
                     <div className="min-w-0">
-                      <p className="font-bold text-gray-900 uppercase tracking-tight text-sm truncate">{m.nome}</p>
+                      <p className="font-bold text-gray-900 uppercase tracking-tight text-sm max-sm:leading-snug break-words sm:truncate">{m.nome}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{pends.length} pendência{pends.length === 1 ? '' : 's'}</p>
                     </div>
                   </div>
@@ -1361,19 +1403,14 @@ export default function PagamentosPage() {
 
   async function fetchResumo() {
     const m = String(mesSel).padStart(2,'0')
-    const [{ data: membros }, { data: mens }, { data: anu }, { data: evs }] = await Promise.all([
-      supabase.from('membros').select('id, status, data_entrada'),
-      supabase.from('mensalidades').select('membro_id, status').eq('mes', mesSel).eq('ano', anoSel),
+    const [{ data: mens }, { data: anu }, { data: evs }] = await Promise.all([
+      supabase.from('mensalidades').select('membro_id, mes, valor, status').eq('mes', mesSel).eq('ano', anoSel),
       supabase.from('anuidades').select('membro_id, valor, status').eq('ano', anoSel),
       supabase.from('pagamentos_eventos').select('id, valor, tipo').gte('data', `${anoSel}-${m}-01`).lte('data', `${anoSel}-${m}-31`),
     ])
 
-    // Mensalidades: registro "não pago" conta; sem registro, só conta quem estava ativo e já tinha entrado
-    const comRegistro = new Set((mens ?? []).map(r => r.membro_id))
-    const naoPagosReg = (mens ?? []).filter(r => r.status === 'nao_pago').length
-    const semRegistroCobraveis = ((membros ?? []) as Membro[]).filter(mb =>
-      !comRegistro.has(mb.id) && pagaMensalidade(mb) && entrouAte(mb, mesSel, anoSel)).length
-    const totalMens = ehMesCobrado(mesSel) ? (naoPagosReg + semRegistroCobraveis) * 20 : 0
+    // Mensalidades: regra única — só linhas lançadas 'nao_pago' (sem jan/jul). Mês sem lançamento não é dívida.
+    const totalMens = (mens ?? []).filter(ehPendencia).reduce((s, r) => s + +r.valor, 0)
 
     // Anuidades: pendentes (não pagas)
     const totalAnu = (anu ?? []).filter(r => r.status !== 'pago').reduce((s, r) => s + +r.valor, 0)
@@ -1429,13 +1466,13 @@ export default function PagamentosPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {cards.map(c => (
           <div key={c.label}
-            className="rounded-2xl border px-5 py-5 shadow-sm"
+            className="rounded-2xl border px-4 py-4 sm:px-5 sm:py-5 shadow-sm"
             style={c.destaque
               ? { background: '#fef2f2', borderColor: '#fde2e2' }
               : { background: '#fff', borderColor: '#f3f4f6' }}>
             <p className="text-[11px] font-bold uppercase tracking-widest mb-3"
               style={{ color: c.destaque ? '#dc2626' : '#9ca3af' }}>{c.label}</p>
-            <p className="text-2xl font-black" style={{ color: c.destaque ? '#c0392b' : '#111827' }}>{fmt(c.value)}</p>
+            <p className="text-xl sm:text-2xl font-black" style={{ color: c.destaque ? '#c0392b' : '#111827' }}>{fmt(c.value)}</p>
           </div>
         ))}
       </div>
@@ -1457,7 +1494,7 @@ export default function PagamentosPage() {
         })}
 
         {/* separador */}
-        {mostraMeses && <div className="w-px h-6 bg-gray-200 mx-1" />}
+        {mostraMeses && <div className="hidden sm:block w-px h-6 bg-gray-200 mx-1" />}
 
         {mostraAnos && ANOS.map(a => {
           const active = anoSel === a
@@ -1474,12 +1511,12 @@ export default function PagamentosPage() {
       </div>
 
       {/* Sub-abas segmentadas */}
-      <div className="flex bg-gray-100 rounded-2xl p-1.5">
+      <div className="grid grid-cols-2 gap-1 sm:flex sm:gap-0 bg-gray-100 rounded-2xl p-1.5">
         {tabs.map(({ id, label }) => {
           const active = tab === id
           return (
             <button key={id} onClick={() => setTab(id)}
-              className="flex-1 py-3 rounded-xl text-sm font-bold uppercase tracking-wide transition-all"
+              className="sm:flex-1 min-h-[44px] py-3 px-2 sm:px-0 rounded-xl text-xs sm:text-sm font-bold uppercase tracking-wide whitespace-nowrap transition-all"
               style={active
                 ? { background: '#fff', color: '#111827', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
                 : { background: 'transparent', color: '#9ca3af' }}>

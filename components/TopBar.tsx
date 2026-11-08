@@ -20,7 +20,7 @@ export default function TopBar() {
     LABELS[Object.keys(LABELS).find(k => k !== '/tesouraria' && pathname.startsWith(k)) ?? '/tesouraria'] ?? 'Início'
 
   return (
-    <div className="flex items-center justify-between px-8 py-4 bg-white" style={{ borderBottom: '1px solid #f0f0f0' }}>
+    <div className="flex items-center justify-between min-h-[76px] pl-[76px] pr-4 md:min-h-0 md:px-8 py-4 bg-white" style={{ borderBottom: '1px solid #f0f0f0' }}>
       <div>
         <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: '#aaa' }}>Seção Atual</p>
         <p className="text-lg font-black tracking-tight text-gray-900 uppercase">{label}</p>

@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { FileSpreadsheet } from 'lucide-react'
 import { supabase, type Membro } from '@/lib/supabase'
 import { exportarExcel } from '@/lib/excel'
-import { CAMPO_FALTA_JUSTIFICADA, FREQUENCIA_MINIMA, naChamada } from '@/lib/escrivao'
-import { calcularFrequencia, carregarSemestre, fmtPct, rotuloSemestre, semestreAtual,
+import { CAMPO_FALTA_JUSTIFICADA, FREQUENCIA_MINIMA } from '@/lib/escrivao'
+import { apareceNoPeriodo, calcularFrequencia, carregarSemestre, fmtPct, rotuloSemestre, semestreAtual,
   type PresencaFreq, type ReuniaoFreq, type Semestre } from '@/lib/frequencia'
 
 // Frequência por membro no semestre (regra em lib/frequencia.ts).
@@ -36,8 +36,8 @@ export default function FrequenciaSemestre() {
     const lista: Linha[] = []
     for (const m of membros) {
       const ps = porMembro.get(m.id) ?? []
-      // 'ativo' + quem tem presença no período
-      if (!naChamada(m) && !ps.some(p => p.presente)) continue
+      // regra única: aparece se estiver na chamada de ao menos uma reunião do período
+      if (!apareceNoPeriodo(m, reunioes, ps)) continue
       const f = calcularFrequencia(m, reunioes, ps)
       lista.push({ id: m.id, nome: m.nome, presencas: f.presencas, justificadas: f.justificadas, consideradas: f.consideradas, pct: f.pct })
     }
@@ -61,15 +61,15 @@ export default function FrequenciaSemestre() {
       <div className="flex flex-wrap items-center gap-2">
         {([1, 2] as const).map(s => (
           <button key={s} onClick={() => setSemestre(s)}
-            className="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wide"
+            className="px-4 py-3 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wide"
             style={semestre === s ? { background: '#c0392b', color: '#fff' } : { background: '#fff', color: '#9ca3af', border: '1px solid #f0f0f0' }}>
             {s}º semestre
           </button>
         ))}
-        <div className="w-px h-6 bg-gray-200 mx-1" />
+        <div className="hidden sm:block w-px h-6 bg-gray-200 mx-1" />
         {anos.map(a => (
           <button key={a} onClick={() => setAno(a)}
-            className="px-4 py-2 rounded-xl text-xs font-bold tracking-wide"
+            className="px-4 py-3 sm:py-2 rounded-xl text-xs font-bold tracking-wide"
             style={ano === a ? { background: '#111827', color: '#fff' } : { background: '#fff', color: '#9ca3af', border: '1px solid #f0f0f0' }}>
             {a}
           </button>
@@ -77,14 +77,14 @@ export default function FrequenciaSemestre() {
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-gray-100">
           <div>
             <p className="text-sm font-black uppercase tracking-widest text-gray-700">Frequência — {rotulo}</p>
             <p className="text-xs text-gray-400">
               {loading ? 'Carregando…' : `${reunioes.length} ${reunioes.length === 1 ? 'reunião realizada' : 'reuniões realizadas'} até hoje · destaque abaixo de ${FREQUENCIA_MINIMA}%`}
             </p>
           </div>
-          <button onClick={exportar} disabled={loading} className="text-gray-400 hover:text-emerald-600 disabled:opacity-40" title="Exportar Excel">
+          <button onClick={exportar} disabled={loading} className="w-10 h-10 -mr-2 flex items-center justify-center flex-shrink-0 text-gray-400 hover:text-emerald-600 disabled:opacity-40 sm:w-auto sm:h-auto sm:mr-0" title="Exportar Excel">
             <FileSpreadsheet size={16} />
           </button>
         </div>
@@ -96,11 +96,11 @@ export default function FrequenciaSemestre() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-[10px] font-bold uppercase tracking-widest text-gray-400 text-left">
-                  <th className="px-5 py-2.5">Membro</th>
-                  <th className="px-3 py-2.5 text-right">Presenças</th>
-                  {CAMPO_FALTA_JUSTIFICADA && <th className="px-3 py-2.5 text-right">Justificadas</th>}
-                  <th className="px-3 py-2.5 text-right">Reuniões</th>
-                  <th className="px-5 py-2.5 text-right">%</th>
+                  <th className="px-4 sm:px-5 py-2.5">Membro</th>
+                  <th className="hidden sm:table-cell px-3 py-2.5 text-right">Presenças</th>
+                  {CAMPO_FALTA_JUSTIFICADA && <th className="hidden sm:table-cell px-3 py-2.5 text-right">Justificadas</th>}
+                  <th className="hidden sm:table-cell px-3 py-2.5 text-right">Reuniões</th>
+                  <th className="px-4 sm:px-5 py-2.5 text-right">%</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -108,11 +108,18 @@ export default function FrequenciaSemestre() {
                   const baixa = l.pct !== null && l.pct < FREQUENCIA_MINIMA
                   return (
                     <tr key={l.id} style={baixa ? { background: '#fef2f2' } : {}}>
-                      <td className="px-5 py-2.5 font-medium text-gray-800">{l.nome}</td>
-                      <td className="px-3 py-2.5 text-right text-gray-700">{l.presencas}</td>
-                      {CAMPO_FALTA_JUSTIFICADA && <td className="px-3 py-2.5 text-right text-gray-700">{l.justificadas}</td>}
-                      <td className="px-3 py-2.5 text-right text-gray-700">{l.consideradas}</td>
-                      <td className="px-5 py-2.5 text-right font-bold" style={{ color: baixa ? '#dc2626' : '#16a34a' }}>{fmtPct(l.pct)}</td>
+                      <td className="px-4 sm:px-5 py-2.5 font-medium text-gray-800">
+                        {l.nome}
+                        {/* celular: contagem embaixo do nome, para a % nunca sair da tela */}
+                        <span className="sm:hidden block text-xs font-normal text-gray-400 mt-0.5">
+                          {l.presencas} de {l.consideradas} {l.consideradas === 1 ? 'reunião' : 'reuniões'}
+                          {CAMPO_FALTA_JUSTIFICADA && l.justificadas ? ` · ${l.justificadas} justificada${l.justificadas === 1 ? '' : 's'}` : ''}
+                        </span>
+                      </td>
+                      <td className="hidden sm:table-cell px-3 py-2.5 text-right text-gray-700">{l.presencas}</td>
+                      {CAMPO_FALTA_JUSTIFICADA && <td className="hidden sm:table-cell px-3 py-2.5 text-right text-gray-700">{l.justificadas}</td>}
+                      <td className="hidden sm:table-cell px-3 py-2.5 text-right text-gray-700">{l.consideradas}</td>
+                      <td className="px-4 sm:px-5 py-2.5 text-right font-bold whitespace-nowrap align-top sm:align-middle" style={{ color: baixa ? '#dc2626' : '#16a34a' }}>{fmtPct(l.pct)}</td>
                     </tr>
                   )
                 })}

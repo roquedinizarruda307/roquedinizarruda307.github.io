@@ -1,20 +1,27 @@
 // Cálculo de frequência em reuniões — usado na aba Escrivão > Frequência e na ficha do membro.
 // Regra: presenças / reuniões consideradas. Consideradas = reuniões do semestre já realizadas
-// (até hoje), a partir da data de entrada do membro, menos as faltas justificadas (se existir o campo).
+// (até hoje) em que o membro aparece na chamada (aparecaNaReuniao: tem presença gravada, ou está
+// na chamada e já tinha entrado), menos as faltas justificadas (se existir o campo).
 import { supabase } from '@/lib/supabase'
-import { CAMPO_FALTA_JUSTIFICADA } from '@/lib/escrivao'
+import { CAMPO_FALTA_JUSTIFICADA, aparecaNaReuniao } from '@/lib/escrivao'
 
 export type Semestre = 1 | 2
 export type ReuniaoFreq = { id: string; data: string; titulo: string }
 export type PresencaFreq = Record<string, any> & { reuniao_id: string; membro_id: string; presente: boolean }
 export type MembroFreq = { id: string; nome: string; status?: string | null; data_entrada?: string | null }
 
+/** Membro aparece em ao menos uma reunião do período (regra única aparecaNaReuniao). */
+export const apareceNoPeriodo = (m: MembroFreq, reunioes: ReuniaoFreq[], presencasDoMembro: PresencaFreq[]) => {
+  const com = new Set(presencasDoMembro.map(p => p.reuniao_id))
+  return reunioes.some(r => aparecaNaReuniao(m, com.has(r.id), r.data))
+}
+
 export type ResultadoFreq = {
   presencas: number
   justificadas: number
   consideradas: number
   pct: number | null                 // null = nenhuma reunião considerada
-  reunioes: (ReuniaoFreq & { situacao: 'presente' | 'ausente' | 'justificada' | 'antes_da_entrada' })[]
+  reunioes: (ReuniaoFreq & { situacao: 'presente' | 'ausente' | 'justificada' | 'antes_da_entrada' | 'fora_da_chamada' })[]
 }
 
 export const hojeISO = () => {
@@ -61,7 +68,9 @@ export function calcularFrequencia(m: MembroFreq, reunioes: ReuniaoFreq[], prese
   const lista: ResultadoFreq['reunioes'] = []
   for (const r of reunioes) {
     const p = porReuniao.get(r.id)
-    if (entrada && r.data < entrada) { lista.push({ ...r, situacao: 'antes_da_entrada' }); continue }
+    if (!aparecaNaReuniao(m, !!p, r.data)) {
+      lista.push({ ...r, situacao: entrada && r.data < entrada ? 'antes_da_entrada' : 'fora_da_chamada' }); continue
+    }
     if (p?.presente) { presencas++; consideradas++; lista.push({ ...r, situacao: 'presente' }) }
     else if (campoJ && p?.[campoJ]) { justificadas++; lista.push({ ...r, situacao: 'justificada' }) }
     else { consideradas++; lista.push({ ...r, situacao: 'ausente' }) }

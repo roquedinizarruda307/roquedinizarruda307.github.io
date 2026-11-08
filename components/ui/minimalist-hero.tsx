@@ -63,7 +63,10 @@ export const MinimalistHero = ({
           .mh-insta { top: 42% !important; left: 0 !important; right: 0 !important; bottom: auto !important;
                       justify-content: center !important; transform: translateY(88px) !important; font-size: 12px !important;
                       opacity: 0.9 !important; text-shadow: 0 2px 10px rgba(0,0,0,0.8) !important; }
-          .mh-loc   { bottom: 16px !important; right: 0 !important; left: 0 !important; text-align: center !important; }
+          /* "Capítulo Nº 307 — Brasil" logo abaixo do Instagram, fora da imagem (antes ficava em cima do Jacques) */
+          .mh-loc   { top: 42% !important; bottom: auto !important; right: 0 !important; left: 0 !important; text-align: center !important;
+                      transform: translateY(114px) !important; font-size: 11px !important; letter-spacing: 0.08em !important;
+                      color: rgba(255,255,255,0.6) !important; text-shadow: 0 2px 10px rgba(0,0,0,0.8) !important; }
           .mh-side  { display: none !important; }
 
           /* Variante com bio (tela do Alberto): esconde título/instagram, mostra a história embaixo */

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, X, AlertCircle, UserCheck, List } from 'lucide-react'
-import { MESES_COBRADOS, ehMesCobrado } from '@/lib/mensalidades'
+import { ehMesCobrado, filtroEmAberto } from '@/lib/mensalidades'
 import PresencaMembro from '@/components/PresencaMembro'
 
 const inp = "w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-white focus:border-gray-400 transition-colors"
@@ -14,12 +14,12 @@ type Status = 'ativo' | 'senior' | 'afastado'
 const STATUS: Record<Status, { label: string; color: string }> = {
   ativo:    { label: 'Ativo',    color: '#16a34a' },
   senior:   { label: 'Sênior',  color: '#1d4ed8' },
-  afastado: { label: 'Inativo', color: '#9ca3af' },
+  afastado: { label: 'Afastado', color: '#9ca3af' },
 }
 const CATEGORIA: Record<Status, string> = {
   ativo:    'Demolay Ativo',
   senior:   'Demolay Sênior',
-  afastado: 'Demolay Inativo',
+  afastado: 'Demolay Afastado',
 }
 
 function ModalPendencias({ membro, onClose }: { membro: any; onClose: () => void }) {
@@ -27,8 +27,7 @@ function ModalPendencias({ membro, onClose }: { membro: any; onClose: () => void
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.from('mensalidades').select('*')
-      .eq('membro_id', membro.id).eq('status', 'nao_pago').in('mes', [...MESES_COBRADOS])
+    filtroEmAberto(supabase.from('mensalidades').select('*').eq('membro_id', membro.id))
       .order('ano').order('mes')
       .then(({ data }) => { setPendencias(data ?? []); setLoading(false) })
   }, [membro.id])
@@ -44,7 +43,7 @@ function ModalPendencias({ membro, onClose }: { membro: any; onClose: () => void
             <p className="font-bold text-gray-900 text-sm">{membro.nome}</p>
             <p className="text-xs text-gray-400 mt-0.5">Mensalidades em aberto e presença</p>
           </div>
-          <button onClick={onClose} className="text-gray-300 hover:text-gray-500"><X size={16} /></button>
+          <button onClick={onClose} aria-label="Fechar" className="w-10 h-10 -mr-3 flex items-center justify-center flex-shrink-0 sm:w-auto sm:h-auto sm:mr-0 text-gray-300 hover:text-gray-500"><X size={16} /></button>
         </div>
         <div className="px-5 py-4 max-h-56 overflow-y-auto">
           {loading ? (
@@ -72,7 +71,7 @@ function ModalPendencias({ membro, onClose }: { membro: any; onClose: () => void
         </div>
         {pendencias.length > 0 && (
           <div className="px-5 py-3.5 border-t border-gray-100 flex justify-between">
-            <span className="text-sm text-gray-400">{pendencias.length} mês{pendencias.length !== 1 ? 'es' : ''}</span>
+            <span className="text-sm text-gray-400">{pendencias.length} {pendencias.length === 1 ? 'mês' : 'meses'}</span>
             <span className="text-sm font-bold text-red-600">
               {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </span>
@@ -100,7 +99,7 @@ export default function MembrosPage() {
     setLoading(true)
     const [{ data: m }, { data: mens }, { data: anu }, { data: parts }, { data: peds }, { data: evs }] = await Promise.all([
       supabase.from('membros').select('*').order('nome'),
-      supabase.from('mensalidades').select('membro_id, valor').eq('status', 'nao_pago').in('mes', [...MESES_COBRADOS]),
+      filtroEmAberto(supabase.from('mensalidades').select('membro_id, valor')),
       supabase.from('anuidades').select('membro_id, valor, status').neq('status', 'pago'),
       supabase.from('evento_participantes').select('membro_id, qtd, pago, evento_id').eq('pago', false),
       supabase.from('evento_pedidos').select('membro_id, valor, pago').eq('pago', false),
@@ -159,7 +158,7 @@ export default function MembrosPage() {
   )
 
   return (
-    <div className="p-7 max-w-6xl space-y-5">
+    <div className="p-4 sm:p-7 max-w-6xl space-y-5">
       {modal && <ModalPendencias membro={modal} onClose={() => setModal(null)} />}
 
       {/* Cabeçalho */}

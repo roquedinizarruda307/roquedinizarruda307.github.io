@@ -36,7 +36,7 @@ export default function Sidebar() {
 
   return (
     <>
-      <button className="fixed top-4 left-4 z-50 md:hidden p-2 rounded-lg text-white"
+      <button className="fixed top-4 left-4 z-50 md:hidden w-11 h-11 flex items-center justify-center rounded-xl text-white" aria-label="Menu"
         style={{ background: '#1c1c1c' }} onClick={() => setOpen(!open)}>
         {open ? <X size={18} /> : <Menu size={18} />}
       </button>

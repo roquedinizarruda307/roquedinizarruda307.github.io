@@ -5,7 +5,7 @@ import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, Trash2, Check, FileSpreadsheet, FileText } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { exportarWord, escaparHtml } from '@/lib/word'
-import { naChamada } from '@/lib/escrivao'
+import { aparecaNaReuniao } from '@/lib/escrivao'
 import FrequenciaSemestre from '@/components/FrequenciaSemestre'
 
 type Reuniao = { id: string; data: string; titulo: string; ata: string }
@@ -108,8 +108,9 @@ export default function EscrivaoPage() {
     exportarWord(`ata_${sel.data}`, `Ata ${fmtData(sel.data)}`, corpo)
   }
 
-  // Chamada: membros 'ativo' + quem já tem presença gravada nesta reunião (atas antigas ficam completas)
-  const chamada = membros.filter(m => naChamada(m) || m.id in presencas)
+  // Chamada (regra única aparecaNaReuniao): quem já tem presença gravada nesta reunião (atas antigas
+  // ficam completas) + 'ativo' que já tinha entrado até a data da reunião
+  const chamada = sel ? membros.filter(m => aparecaNaReuniao(m, m.id in presencas, sel.data)) : []
   const presentes = chamada.filter(m => presencas[m.id]).length
 
   return (
@@ -122,7 +123,7 @@ export default function EscrivaoPage() {
       <div className="flex bg-gray-100 rounded-2xl p-1.5 mb-5 max-w-sm">
         {([['reunioes', 'Reuniões'], ['frequencia', 'Frequência']] as const).map(([id, label]) => (
           <button key={id} onClick={() => setAba(id)}
-            className="flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all"
+            className="flex-1 py-3 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all"
             style={aba === id ? { background: '#fff', color: '#111827', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : { color: '#9ca3af' }}>
             {label}
           </button>
@@ -145,14 +146,17 @@ export default function EscrivaoPage() {
               <div className="py-8 px-4 text-center text-sm text-gray-300">Nenhuma reunião ainda.</div>
             ) : reunioes.map((r, i) => (
               <button key={r.id} onClick={() => selecionar(r)}
-                className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors ${i < reunioes.length-1 ? 'border-b border-gray-50' : ''}`}
+                className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-gray-50 transition-colors ${i < reunioes.length-1 ? 'border-b border-gray-50' : ''}`}
                 style={sel?.id === r.id ? { background: '#fef2f2' } : {}}>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-gray-800 truncate">{r.titulo}</p>
+                  <p className="text-sm font-bold text-gray-800 max-sm:leading-snug break-words sm:truncate">{r.titulo}</p>
                   <p className="text-xs text-gray-400">{fmtData(r.data)}</p>
                 </div>
-                <Trash2 size={14} className="text-gray-300 hover:text-red-500 flex-shrink-0"
-                  onClick={(e) => { e.stopPropagation(); excluirReuniao(r) }} />
+                <span role="button" aria-label="Excluir reunião" title="Excluir reunião"
+                  className="p-3 -my-2 -mr-3 sm:p-0 sm:my-0 sm:mr-0 flex-shrink-0 text-gray-300 hover:text-red-500"
+                  onClick={(e) => { e.stopPropagation(); excluirReuniao(r) }}>
+                  <Trash2 size={14} />
+                </span>
               </button>
             ))}
           </div>
@@ -166,7 +170,7 @@ export default function EscrivaoPage() {
         ) : (
           <div className="space-y-5">
             {/* Cabeçalho editável */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-wrap items-end gap-4">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5 flex flex-wrap items-end gap-4">
               <div className="flex-1 min-w-[160px]">
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Título</label>
                 <input value={sel.titulo} onChange={e => atualizarCampo('titulo', e.target.value)}
@@ -181,13 +185,13 @@ export default function EscrivaoPage() {
 
             {/* Presença */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <div className="flex items-center justify-between gap-2 px-4 sm:px-5 py-3 border-b border-gray-100">
                 <p className="text-sm font-black uppercase tracking-widest text-gray-700">Presença</p>
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#f0fdf4', color: '#16a34a' }}>
                     {presentes}/{chamada.length} presentes
                   </span>
-                  <button onClick={exportarPresenca} className="text-gray-400 hover:text-emerald-600" title="Exportar Excel">
+                  <button onClick={exportarPresenca} className="p-2.5 -m-2.5 sm:p-0 sm:m-0 text-gray-400 hover:text-emerald-600" title="Exportar Excel">
                     <FileSpreadsheet size={16} />
                   </button>
                 </div>
@@ -196,10 +200,10 @@ export default function EscrivaoPage() {
                 {chamada.map(m => {
                   const presente = !!presencas[m.id]
                   return (
-                    <div key={m.id} className="flex items-center justify-between px-5 py-2.5">
-                      <span className="text-sm font-medium text-gray-800">{m.nome}</span>
+                    <div key={m.id} className="flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5">
+                      <span className="text-sm font-medium text-gray-800 max-sm:leading-snug min-w-0 break-words">{m.nome}</span>
                       <button onClick={() => togglePresenca(m.id)}
-                        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg transition-colors"
+                        className="flex items-center justify-center gap-1.5 flex-shrink-0 min-w-[104px] sm:min-w-0 min-h-[40px] sm:min-h-0 text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg transition-colors"
                         style={presente ? { background: '#f0fdf4', color: '#16a34a' } : { background: '#fef2f2', color: '#dc2626' }}>
                         {presente && <Check size={12} />} {presente ? 'Presente' : 'Ausente'}
                       </button>
@@ -210,7 +214,7 @@ export default function EscrivaoPage() {
             </div>
 
             {/* Ata */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <p className="text-sm font-black uppercase tracking-widest text-gray-700">Ata da reunião</p>
                 <div className="flex items-center gap-2">

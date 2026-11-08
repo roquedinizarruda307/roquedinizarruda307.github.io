@@ -68,7 +68,7 @@ export default function FluxoPage() {
   }
 
   return (
-    <div className="p-7 max-w-6xl space-y-5">
+    <div className="p-4 sm:p-7 max-w-6xl space-y-5">
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -93,26 +93,52 @@ export default function FluxoPage() {
           <FileSpreadsheet size={14} className="text-emerald-500" /> Exportar Excel
         </button>
         <div className="flex-1" />
-        <div className="text-right">
+        <div className="text-right ml-auto">
           <p className="text-xs text-gray-400 mb-0.5">Saldo do período</p>
           <p className="text-lg font-bold" style={{ color: saldo >= 0 ? '#111' : '#c0392b' }}>{fmt(saldo)}</p>
         </div>
       </div>
 
       {/* Cards */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-gray-100 px-6 py-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+        <div className="bg-white rounded-xl border border-gray-100 px-4 py-4 sm:px-6 sm:py-5">
           <p className="text-xs text-gray-400 mb-3">Total entradas</p>
-          <p className="text-3xl font-bold" style={{ color: '#16a34a' }}>{fmt(entradas)}</p>
+          <p className="text-xl sm:text-3xl font-bold" style={{ color: '#16a34a' }}>{fmt(entradas)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-100 px-6 py-5">
+        <div className="bg-white rounded-xl border border-gray-100 px-4 py-4 sm:px-6 sm:py-5">
           <p className="text-xs text-gray-400 mb-3">Total saídas</p>
-          <p className="text-3xl font-bold" style={{ color: '#c0392b' }}>{fmt(saidas)}</p>
+          <p className="text-xl sm:text-3xl font-bold" style={{ color: '#c0392b' }}>{fmt(saidas)}</p>
         </div>
       </div>
 
+      {/* Celular: um cartão por movimentação (a tabela abaixo fica só no computador) */}
+      <div className="md:hidden bg-white rounded-xl border border-gray-100 overflow-hidden">
+        {loading ? (
+          <div className="py-16 text-center text-sm text-gray-300">Carregando...</div>
+        ) : rows.length === 0 ? (
+          <div className="py-16 px-4 text-center text-sm text-gray-300">Nenhuma movimentação neste período.</div>
+        ) : rows.map((r, i) => (
+          <div key={r.id} className={`flex items-start gap-3 px-4 py-3.5 ${i < rows.length - 1 ? 'border-b border-gray-50' : ''}`}>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-gray-800 leading-snug break-words">{r.descricao}</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR')}{r.categoria ? ` · ${r.categoria}` : ''}
+                {urlSegura(r.recibo_url) && <> · <a href={urlSegura(r.recibo_url)!} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: '#c0392b' }}>Recibo</a></>}
+              </p>
+            </div>
+            <p className="text-sm font-semibold whitespace-nowrap pt-0.5" style={{ color: r.tipo === 'entrada' ? '#16a34a' : '#c0392b' }}>
+              {r.tipo === 'entrada' ? '+' : '-'}{fmt(bruto(r))}
+            </p>
+            <button onClick={() => excluir(r)} title="Excluir" aria-label="Excluir"
+              className="-my-1.5 -mr-2 w-10 h-10 flex items-center justify-center flex-shrink-0 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* Tabela */}
-      <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
+      <div className="hidden md:block bg-white rounded-xl border border-gray-100 overflow-x-auto">
         <div className="min-w-[660px]">
         <div className="grid grid-cols-[110px_1fr_140px_70px_120px_60px] px-6 py-3 border-b border-gray-100">
           {['Data','Descrição','Categoria','Recibo','Valor',''].map((h, idx) => (
