@@ -5,9 +5,10 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import { MinimalistHero } from '@/components/ui/minimalist-hero'
 import { asset } from '@/lib/asset'
+import { createRecoveryClient } from '@/lib/supabase-browser'
 
 export default function LoginPage() {
-  const [tab, setTab] = useState<'login' | 'signup'>('login')
+  const [tab, setTab] = useState<'login' | 'signup' | 'esqueci'>('login')
   const [phase, setPhase] = useState<'hero' | 'splash' | 'form'>('hero')
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
@@ -40,21 +41,44 @@ export default function LoginPage() {
     router.replace('/tesouraria')
   }
 
+  async function handleEsqueci(e: React.FormEvent) {
+    e.preventDefault()
+    if (!configured) { setErro('Configure o Supabase no .env.local primeiro.'); return }
+    const alvo = email.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(alvo)) { setErro('Digite um e-mail válido.'); return }
+    setLoading(true)
+    setErro('')
+    const base = window.location.origin + (process.env.NEXT_PUBLIC_BASE_PATH || '')
+    // resposta neutra sempre: não revela se o e-mail tem conta
+    await createRecoveryClient().auth.resetPasswordForEmail(alvo, { redirectTo: `${base}/redefinir-senha/` })
+    setErro('Se o e-mail estiver cadastrado, você vai receber um link para criar uma nova senha.')
+    setLoading(false)
+  }
+
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
     if (!configured) { setErro('Configure o Supabase no .env.local primeiro.'); return }
     setLoading(true)
     setErro('')
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password: senha,
       options: { data: { nome } },
     })
-    if (error) { setErro(error.message); setLoading(false); return }
-    // cria o perfil como PENDENTE (precisa de aprovação do admin)
-    await supabase.from('perfis').upsert(
-      { email: email.trim().toLowerCase(), papel: 'admin', aprovado: false },
-      { onConflict: 'email', ignoreDuplicates: true }
-    )
+    if (error) {
+      // mensagem genérica (não revela se o e-mail já tem conta)
+      setErro(/password/i.test(error.message)
+        ? 'A senha não atende aos requisitos mínimos (use pelo menos 8 caracteres).'
+        : 'Não foi possível criar a conta. Verifique os dados e tente novamente.')
+      setLoading(false); return
+    }
+    // o perfil PENDENTE é criado no banco (trigger em auth.users), não pelo navegador
+    // e-mail já cadastrado: com confirmação de e-mail ligada o Supabase devolve user
+    // com identities vazio (sem erro). Mostrar isso não aumenta a exposição: a mesma
+    // informação já sai da API de cadastro para quem chamar direto com a chave pública.
+    if (data.user && (data.user.identities?.length ?? 0) === 0) {
+      setErro('Este e-mail já tem conta. Use a aba Entrar ou “Esqueci minha senha”.')
+      setLoading(false); return
+    }
     setErro('Conta criada! Aguarde a aprovação de um administrador para acessar o sistema.')
     setLoading(false)
   }
@@ -156,7 +180,7 @@ export default function LoginPage() {
                   ))}
                 </div>
 
-                <form onSubmit={tab === 'login' ? handleLogin : handleSignup}>
+                <form onSubmit={tab === 'login' ? handleLogin : tab === 'esqueci' ? handleEsqueci : handleSignup}>
                   {tab === 'signup' && (
                     <div style={{ marginBottom:16 }}>
                       <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>Nome completo</label>
@@ -167,24 +191,24 @@ export default function LoginPage() {
                     <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>E-mail</label>
                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:14, color:'#faf5f5', outline:'none' }} />
                   </div>
-                  <div style={{ marginBottom:18 }}>
+                  {tab !== 'esqueci' && <div style={{ marginBottom:18 }}>
                     <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>Senha</label>
                     <input type="password" value={senha} onChange={e => setSenha(e.target.value)} placeholder="••••••••" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:14, color:'#faf5f5', outline:'none' }} />
-                  </div>
+                  </div>}
 
                   {erro && (
-                    <p style={{ fontSize:12, color: erro.includes('Conta criada') ? '#86efac' : '#fca5a5', marginBottom:12 }}>{erro}</p>
+                    <p style={{ fontSize:12, color: (erro.includes('Conta criada') || erro.startsWith('Se o e-mail')) ? '#86efac' : '#fca5a5', marginBottom:12 }}>{erro}</p>
                   )}
 
                   <button type="submit" disabled={loading} style={{ width:'100%', background:'#c0392b', color:'#fff', border:'none', borderRadius:10, padding:14, fontFamily:"'DM Sans',sans-serif", fontSize:14.5, fontWeight:700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, transition:'background .2s' }}
                     onMouseEnter={e => !loading && ((e.currentTarget as HTMLElement).style.background='#a93226')}
                     onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background='#c0392b')}>
-                    {loading ? 'Aguarde...' : tab === 'login' ? 'Entrar no Sistema' : 'Criar conta'}
+                    {loading ? 'Aguarde...' : tab === 'login' ? 'Entrar no Sistema' : tab === 'esqueci' ? 'Enviar link' : 'Criar conta'}
                   </button>
                 </form>
 
                 <div style={{ marginTop:18, fontSize:11.5, color:'rgba(255,255,255,.25)' }}>
-                  Acesso restrito · <span style={{ color:'rgba(220,100,100,.7)', cursor:'pointer' }}>Esqueci minha senha</span>
+                  Acesso restrito · <button type="button" onClick={() => { setTab(tab === 'esqueci' ? 'login' : 'esqueci'); setErro('') }} style={{ background:'none', border:'none', padding:0, font:'inherit', color:'rgba(220,100,100,.7)', cursor:'pointer', textDecoration:'underline' }}>{tab === 'esqueci' ? 'Voltar para o login' : 'Esqueci minha senha'}</button>
                 </div>
               </div>
             </div>

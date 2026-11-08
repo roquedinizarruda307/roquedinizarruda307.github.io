@@ -22,13 +22,12 @@ export function PapelProvider({ children }: { children: React.ReactNode }) {
     if (!isSupabaseConfigured()) { setPapel('admin'); setCarregando(false); return }
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user?.email) { setPapel('admin'); setCarregando(false); return }
+      if (!user?.email) { setPapel('escrivao'); setCarregando(false); return }
       const email = user.email.toLowerCase()
       const { data } = await supabase.from('perfis').select('papel').eq('email', email).maybeSingle()
-      // conta antiga sem ficha: cria uma automaticamente (admin, como já era o acesso dela)
-      // para sempre aparecer em Ajustes → Contas e níveis
-      if (!data) await supabase.from('perfis').upsert({ email, papel: 'admin', aprovado: true }, { onConflict: 'email' })
-      setPapel((data?.papel as Papel) ?? 'admin')
+      // sem ficha em perfis = sem acesso (o AuthGuard já mostra "aguardando aprovação").
+      // Nunca criar perfil pelo navegador; papel mínimo por segurança.
+      setPapel((data?.papel as Papel) ?? 'escrivao')
       setCarregando(false)
     })
   }, [])

@@ -24,7 +24,10 @@ const LOTES = [
 ];
 
 const SUPABASE_URL = 'https://skalkpkolumpgkjggtwy.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrYWxrcGtvbHVtcGdramdndHd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NTkzMDEsImV4cCI6MjA5NjUzNTMwMX0.goxiFpqK8hbmeEglq2z4dJV5iGJbWahbqVXIe2wzBr8';
+// Chave NÃO fica no código. Com o RLS ligado (2026-11-08) a chave anon não grava mais.
+// No Apps Script: Configurações do projeto > Propriedades do script >
+// adicionar SUPABASE_SERVICE_KEY = (service_role do painel Supabase > Settings > API).
+const SUPABASE_KEY = PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
 
 // ─── Execute UMA VEZ para ligar a automação ─────────────────────────────────
 function configurar() {
@@ -149,6 +152,7 @@ function garantirEvento() {
 
 // ─── Comunicação com o banco ────────────────────────────────────────────────
 function supabase(metodo, caminho, corpo) {
+  if (!SUPABASE_KEY) throw new Error('Defina SUPABASE_SERVICE_KEY nas Propriedades do script.');
   const resp = UrlFetchApp.fetch(SUPABASE_URL + caminho, {
     method: metodo.toLowerCase(),
     contentType: 'application/json',

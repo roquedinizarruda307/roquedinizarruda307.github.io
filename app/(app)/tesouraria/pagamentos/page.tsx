@@ -5,6 +5,7 @@ import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check, Trash2, Pencil } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { liquidoEntrada, comTaxaSaida } from '@/lib/taxas'
+import { MESES_COBRADOS, ehMesCobrado, mesCobradoMaisProximo, pagaMensalidade } from '@/lib/mensalidades'
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 const ANO_ATUAL = new Date().getFullYear()
@@ -19,7 +20,7 @@ function inicial(nome: string) {
 }
 
 // Regras de cobrança: membro só é cobrado a partir do mês/ano em que entrou;
-// inativo não gera dívidas novas (as já registradas continuam valendo)
+// só 'ativo' gera dívida nova; senior/afastado não (as já registradas continuam valendo)
 function entrouAte(m: Membro, mes: number, ano: number) {
   if (!m.data_entrada) return true
   const y = +String(m.data_entrada).slice(0, 4), mo = +String(m.data_entrada).slice(5, 7)
@@ -63,7 +64,7 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
   useEffect(() => { fetchDados() }, [fetchDados])
 
   // Quem aparece no mês: quem já tem registro nele, ou está ativo e já tinha entrado
-  const visiveis = membros.filter(m => mapa[m.id] || (m.status !== 'inativo' && entrouAte(m, mes, ano)))
+  const visiveis = membros.filter(m => mapa[m.id] || (pagaMensalidade(m) && entrouAte(m, mes, ano)))
 
   // disponibiliza dados pro relatório
   useEffect(() => {
@@ -203,7 +204,7 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
                        { bg: '#fefce8', color: '#a16207', label: 'Pendente' }
 
   // Quem aparece no ano: quem já tem registro nele, ou está ativo e já tinha entrado
-  const visiveis = membros.filter(m => mapa[m.id] || (m.status !== 'inativo' && entrouAteAno(m, ano)))
+  const visiveis = membros.filter(m => mapa[m.id] || (pagaMensalidade(m) && entrouAteAno(m, ano)))
 
   useEffect(() => {
     registrar(() => {
@@ -531,7 +532,7 @@ function ListaPedidos({ ev, membros, onMudou, onExcluir }: { ev: any; membros: M
           {/* Membro (vincula dívida) */}
           <select value={pMembro} onChange={e => setPMembro(e.target.value)} className={inp + ' appearance-none'}>
             <option value="">Comprador externo</option>
-            {membros.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            {membros.filter(m => pagaMensalidade(m) || m.id === pMembro).map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
           </select>
           {/* Nome livre (usado se não for membro) */}
           <input value={pNome} onChange={e => setPNome(e.target.value)} placeholder="Nome (se externo)" disabled={!!pMembro}
@@ -999,7 +1000,8 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
         const totalPago   = ps.filter(p => p.pago).reduce((s, p) => s + valorDevido(ev, p), 0)
         const pendente    = totalDevido - totalPago
         const aberto = expandido === ev.id
-        const disponiveis = membros.filter(m => !ps.some(p => p.membro_id === m.id))
+        // só ativos podem ser adicionados; quem já participa continua listado acima
+        const disponiveis = membros.filter(m => pagaMensalidade(m) && !ps.some(p => p.membro_id === m.id))
         return (
           <div key={ev.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {/* Cabeçalho do evento */}
@@ -1155,11 +1157,11 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
     const regMens: Record<string, string> = {}
     for (const r of mens ?? []) regMens[`${r.membro_id}-${r.mes}`] = r.id
     for (const m of ms ?? [])
-      for (let mes = 1; mes <= mesAtual; mes++) {
+      for (const mes of MESES_COBRADOS.filter(x => x <= mesAtual)) {
         if (quitadas.has(`${m.id}-${mes}`)) continue
         // sem registro no mês, só cobra quem estava ativo e já tinha entrado
         const temRegistro = regMens[`${m.id}-${mes}`] !== undefined
-        if (!temRegistro && (m.status === 'inativo' || !entrouAte(m, mes, anoAtual))) continue
+        if (!temRegistro && (!pagaMensalidade(m) || !entrouAte(m, mes, anoAtual))) continue
         add(m.id, { key: `mens-${m.id}-${mes}`, tipo: 'Mensalidade', ref: `${MESES_C[mes - 1]}/${anoAtual}`, valor: 20,
           dados: { t: 'mensalidade', id: regMens[`${m.id}-${mes}`], mes, ano: anoAtual } })
       }
@@ -1352,6 +1354,11 @@ export default function PagamentosPage() {
 
   useEffect(() => { fetchResumo() }, [mesSel, anoSel])
 
+  // jan e jul não têm mensalidade: na aba Mensalidades o filtro vai para o mês cobrado mais próximo
+  useEffect(() => {
+    if (tab === 'mensalidades' && !ehMesCobrado(mesSel)) setMesSel(mesCobradoMaisProximo(mesSel))
+  }, [tab, mesSel])
+
   async function fetchResumo() {
     const m = String(mesSel).padStart(2,'0')
     const [{ data: membros }, { data: mens }, { data: anu }, { data: evs }] = await Promise.all([
@@ -1365,8 +1372,8 @@ export default function PagamentosPage() {
     const comRegistro = new Set((mens ?? []).map(r => r.membro_id))
     const naoPagosReg = (mens ?? []).filter(r => r.status === 'nao_pago').length
     const semRegistroCobraveis = ((membros ?? []) as Membro[]).filter(mb =>
-      !comRegistro.has(mb.id) && mb.status !== 'inativo' && entrouAte(mb, mesSel, anoSel)).length
-    const totalMens = (naoPagosReg + semRegistroCobraveis) * 20
+      !comRegistro.has(mb.id) && pagaMensalidade(mb) && entrouAte(mb, mesSel, anoSel)).length
+    const totalMens = ehMesCobrado(mesSel) ? (naoPagosReg + semRegistroCobraveis) * 20 : 0
 
     // Anuidades: pendentes (não pagas)
     const totalAnu = (anu ?? []).filter(r => r.status !== 'pago').reduce((s, r) => s + +r.valor, 0)
@@ -1436,6 +1443,7 @@ export default function PagamentosPage() {
       {/* Filtros: meses + anos na mesma linha */}
       <div className="flex flex-wrap items-center gap-2">
         {mostraMeses && MESES_C.map((m, i) => {
+          if (tab === 'mensalidades' && !ehMesCobrado(i + 1)) return null
           const active = mesSel === i + 1
           return (
             <button key={m} onClick={() => setMesSel(i + 1)}

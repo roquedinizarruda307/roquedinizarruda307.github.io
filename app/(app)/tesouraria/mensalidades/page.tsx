@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase, type Mensalidade, type Membro } from '@/lib/supabase'
+import { MESES_COBRADOS, mesCobradoMaisProximo } from '@/lib/mensalidades'
 import { CheckCircle, Clock, AlertCircle, Plus } from 'lucide-react'
 
 const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -14,7 +15,7 @@ export default function MensalidadesPage() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     membro_id: '',
-    mes: new Date().getMonth() + 1,
+    mes: mesCobradoMaisProximo(new Date().getMonth() + 1),
     ano: new Date().getFullYear(),
     valor: '',
     status: 'pendente' as 'pago' | 'pendente' | 'atrasado',
@@ -28,7 +29,7 @@ export default function MensalidadesPage() {
     setLoading(true)
     const [{ data: m }, { data: ms }] = await Promise.all([
       supabase.from('membros').select('*').eq('status', 'ativo').order('nome'),
-      supabase.from('mensalidades').select('*, membro:membros(*)').eq('ano', anoSelecionado).order('mes'),
+      supabase.from('mensalidades').select('*, membro:membros(*)').eq('ano', anoSelecionado).in('mes', [...MESES_COBRADOS]).order('mes'),
     ])
     setMembros(m ?? [])
     setMensalidades(ms ?? [])
@@ -125,7 +126,7 @@ export default function MensalidadesPage() {
             </select>
             <select value={form.mes} onChange={e => setForm({ ...form, mes: Number(e.target.value) })}
               className="border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300">
-              {meses.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              {MESES_COBRADOS.map(n => <option key={n} value={n}>{meses[n - 1]}</option>)}
             </select>
             <input required type="number" step="0.01" min="0" placeholder="Valor (R$)" value={form.valor}
               onChange={e => setForm({ ...form, valor: e.target.value })}

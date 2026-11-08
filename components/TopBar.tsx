@@ -11,6 +11,7 @@ const LABELS: Record<string, string> = {
   '/tesouraria/pagamentos': 'Pagamentos',
   '/tesouraria/escrivao':   'Escrivão',
   '/tesouraria/ajustes':    'Ajustes',
+  '/tesouraria/senha':      'Minha senha',
 }
 
 export default function TopBar() {

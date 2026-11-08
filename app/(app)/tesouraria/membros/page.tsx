@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Plus, Search, X, AlertCircle, UserCheck, List } from 'lucide-react'
+import { MESES_COBRADOS, ehMesCobrado } from '@/lib/mensalidades'
+import PresencaMembro from '@/components/PresencaMembro'
 
 const inp = "w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-white focus:border-gray-400 transition-colors"
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -26,7 +28,7 @@ function ModalPendencias({ membro, onClose }: { membro: any; onClose: () => void
 
   useEffect(() => {
     supabase.from('mensalidades').select('*')
-      .eq('membro_id', membro.id).eq('status', 'nao_pago')
+      .eq('membro_id', membro.id).eq('status', 'nao_pago').in('mes', [...MESES_COBRADOS])
       .order('ano').order('mes')
       .then(({ data }) => { setPendencias(data ?? []); setLoading(false) })
   }, [membro.id])
@@ -35,16 +37,16 @@ function ModalPendencias({ membro, onClose }: { membro: any; onClose: () => void
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-sm mx-4"
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-sm mx-4 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <p className="font-bold text-gray-900 text-sm">{membro.nome}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Mensalidades em aberto</p>
+            <p className="text-xs text-gray-400 mt-0.5">Mensalidades em aberto e presença</p>
           </div>
           <button onClick={onClose} className="text-gray-300 hover:text-gray-500"><X size={16} /></button>
         </div>
-        <div className="px-5 py-4 max-h-72 overflow-y-auto">
+        <div className="px-5 py-4 max-h-56 overflow-y-auto">
           {loading ? (
             <p className="text-sm text-gray-300 text-center py-4">Carregando...</p>
           ) : pendencias.length === 0 ? (
@@ -76,6 +78,7 @@ function ModalPendencias({ membro, onClose }: { membro: any; onClose: () => void
             </span>
           </div>
         )}
+        <PresencaMembro membro={membro} />
       </div>
     </div>
   )
@@ -97,7 +100,7 @@ export default function MembrosPage() {
     setLoading(true)
     const [{ data: m }, { data: mens }, { data: anu }, { data: parts }, { data: peds }, { data: evs }] = await Promise.all([
       supabase.from('membros').select('*').order('nome'),
-      supabase.from('mensalidades').select('membro_id, valor').eq('status', 'nao_pago'),
+      supabase.from('mensalidades').select('membro_id, valor').eq('status', 'nao_pago').in('mes', [...MESES_COBRADOS]),
       supabase.from('anuidades').select('membro_id, valor, status').neq('status', 'pago'),
       supabase.from('evento_participantes').select('membro_id, qtd, pago, evento_id').eq('pago', false),
       supabase.from('evento_pedidos').select('membro_id, valor, pago').eq('pago', false),
@@ -135,11 +138,14 @@ export default function MembrosPage() {
         .insert([{ nome: form.nome, matricula: form.matricula, status: form.status, data_entrada: new Date().toISOString() }])
         .select('id').single()
       if (novo?.id) {
-        // membro novo só é cobrado a partir do mês de entrada (nada retroativo)
+        // membro novo só é cobrado a partir do mês de entrada (nada retroativo);
+        // jan e jul não têm mensalidade
         const ano = new Date().getFullYear(), mes = new Date().getMonth() + 1
-        await supabase.from('mensalidades').insert(
-          [{ membro_id: novo.id, mes, ano, valor: VALOR, status: 'nao_pago' }]
-        )
+        if (ehMesCobrado(mes)) {
+          await supabase.from('mensalidades').insert(
+            [{ membro_id: novo.id, mes, ano, valor: VALOR, status: 'nao_pago' }]
+          )
+        }
       }
     }
     setShowForm(false); setEditando(null)
@@ -201,7 +207,7 @@ export default function MembrosPage() {
             </div>
             {!editando && (
               <p className="text-xs text-gray-400 mt-2.5">
-                Mensalidades de Jan a {MESES[new Date().getMonth()]} geradas automaticamente (R$ {VALOR}/mês).
+                Cobrado a partir do mês de entrada ({MESES[new Date().getMonth()]}), R$ {VALOR}/mês. Janeiro e julho não têm mensalidade.
               </p>
             )}
             <div className="flex gap-2 mt-4">

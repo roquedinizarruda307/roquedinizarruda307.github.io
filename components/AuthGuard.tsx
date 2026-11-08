@@ -21,8 +21,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       if (!user) { router.replace('/login'); return }
       // verifica aprovação no perfil
       const { data } = await supabase.from('perfis').select('aprovado').eq('email', (user.email ?? '').toLowerCase()).maybeSingle()
-      if (data && data.aprovado === false) setEstado('pendente')
-      else setEstado('liberado')   // sem registro = conta antiga liberada; ou aprovado
+      // só entra quem tem perfil aprovado; sem perfil ou não aprovado = pendente
+      if (data?.aprovado === true) setEstado('liberado')
+      else setEstado('pendente')
     })
   }, [router])
 

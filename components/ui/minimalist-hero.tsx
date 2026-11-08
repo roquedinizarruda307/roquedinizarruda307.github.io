@@ -70,9 +70,14 @@ export const MinimalistHero = ({
           .mh-has-bio .mh-title { display: none !important; }
           .mh-has-bio .mh-insta { display: none !important; }
           .mh-has-bio .mh-loc   { display: none !important; }
-          .mh-has-bio .mh-img   { height: 50vh !important; }
+          /* foto logo abaixo do menu (sem vazio preto) e texto embaixo dela, sem sobrepor */
+          .mh-has-bio .mh-imgwrap { top: 64px !important; bottom: auto !important; height: 52% !important; }
+          .mh-has-bio .mh-imgwrap > div { height: 100% !important; }
+          .mh-has-bio .mh-img   { height: 100% !important; max-width: 100vw !important;
+                                  -webkit-mask-image: linear-gradient(to bottom, #000 82%, transparent 100%);
+                                  mask-image: linear-gradient(to bottom, #000 82%, transparent 100%); }
           .mh-has-bio .mh-side  { display: block !important; left: 0 !important; right: 0 !important;
-                                  top: auto !important; bottom: 5% !important; transform: none !important;
+                                  top: calc(64px + 52% + 14px) !important; bottom: auto !important; transform: none !important;
                                   max-width: none !important; padding: 0 22px !important; text-align: center !important; }
           .mh-has-bio .mh-side p:first-child { font-size: 20px !important; }
           .mh-has-bio .mh-side p { font-size: 14px !important; color: rgba(255,255,255,0.75) !important;

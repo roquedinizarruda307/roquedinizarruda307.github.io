@@ -5,6 +5,8 @@ import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, Trash2, Check, FileSpreadsheet, FileText } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { exportarWord, escaparHtml } from '@/lib/word'
+import { naChamada } from '@/lib/escrivao'
+import FrequenciaSemestre from '@/components/FrequenciaSemestre'
 
 type Reuniao = { id: string; data: string; titulo: string; ata: string }
 
@@ -19,6 +21,7 @@ export default function EscrivaoPage() {
   const [salvandoAta, setSalvandoAta] = useState(false)
   const [ataSalva, setAtaSalva] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [aba, setAba] = useState<'reunioes' | 'frequencia'>('reunioes')
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -83,15 +86,15 @@ export default function EscrivaoPage() {
   function exportarPresenca() {
     if (!sel) return
     const linhas: (string | number)[][] = [[`Reunião ${sel.titulo} — ${fmtData(sel.data)}`], [], ['Membro', 'Presença']]
-    for (const m of membros) linhas.push([m.nome, presencas[m.id] ? 'Presente' : 'Ausente'])
+    for (const m of chamada) linhas.push([m.nome, presencas[m.id] ? 'Presente' : 'Ausente'])
     linhas.push([]); linhas.push(['Total presentes', presentes])
     exportarExcel(`presenca_${sel.data}.xlsx`, linhas, 'Presença')
   }
 
   function exportarAtaWord() {
     if (!sel) return
-    const presentesNomes = membros.filter(m => presencas[m.id]).map(m => m.nome)
-    const ausentesNomes = membros.filter(m => !presencas[m.id]).map(m => m.nome)
+    const presentesNomes = chamada.filter(m => presencas[m.id]).map(m => m.nome)
+    const ausentesNomes = chamada.filter(m => !presencas[m.id]).map(m => m.nome)
     const corpo =
       `<h2 style="text-align:center;margin:0 0 4px">Capítulo Roque Diniz Arruda nº 307</h2>` +
       `<p style="text-align:center;color:#666;margin:0 0 18px">Ordem DeMolay</p>` +
@@ -105,15 +108,28 @@ export default function EscrivaoPage() {
     exportarWord(`ata_${sel.data}`, `Ata ${fmtData(sel.data)}`, corpo)
   }
 
-  const presentes = membros.filter(m => presencas[m.id]).length
+  // Chamada: membros 'ativo' + quem já tem presença gravada nesta reunião (atas antigas ficam completas)
+  const chamada = membros.filter(m => naChamada(m) || m.id in presencas)
+  const presentes = chamada.filter(m => presencas[m.id]).length
 
   return (
     <div className="p-4 sm:p-7 max-w-6xl">
       <div className="mb-5">
         <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: '#c0392b' }}>Escrivão</p>
-        <h1 className="text-2xl font-black text-gray-900">Reuniões — Presença e Ata</h1>
+        <h1 className="text-2xl font-black text-gray-900">{aba === 'reunioes' ? 'Reuniões — Presença e Ata' : 'Frequência no semestre'}</h1>
       </div>
 
+      <div className="flex bg-gray-100 rounded-2xl p-1.5 mb-5 max-w-sm">
+        {([['reunioes', 'Reuniões'], ['frequencia', 'Frequência']] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setAba(id)}
+            className="flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all"
+            style={aba === id ? { background: '#fff', color: '#111827', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : { color: '#9ca3af' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {aba === 'frequencia' ? <FrequenciaSemestre /> : (
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
         {/* Lista de reuniões */}
         <div className="space-y-3">
@@ -169,7 +185,7 @@ export default function EscrivaoPage() {
                 <p className="text-sm font-black uppercase tracking-widest text-gray-700">Presença</p>
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#f0fdf4', color: '#16a34a' }}>
-                    {presentes}/{membros.length} presentes
+                    {presentes}/{chamada.length} presentes
                   </span>
                   <button onClick={exportarPresenca} className="text-gray-400 hover:text-emerald-600" title="Exportar Excel">
                     <FileSpreadsheet size={16} />
@@ -177,7 +193,7 @@ export default function EscrivaoPage() {
                 </div>
               </div>
               <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
-                {membros.map(m => {
+                {chamada.map(m => {
                   const presente = !!presencas[m.id]
                   return (
                     <div key={m.id} className="flex items-center justify-between px-5 py-2.5">
@@ -217,6 +233,7 @@ export default function EscrivaoPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }
