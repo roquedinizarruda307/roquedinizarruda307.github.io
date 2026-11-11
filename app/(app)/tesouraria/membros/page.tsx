@@ -127,6 +127,7 @@ export default function MembrosPage() {
   // Só admin/dona transfere para Sênior (escrivão edita Membros, mas não faz a transferência)
   const podeAdministrar = !carregandoPapel && ehAdmin(papel)
   const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState('')
   const [busca, setBusca] = useState('')
   const [filtroSit, setFiltroSit] = useState<FiltroSit>('todas')
   const [ordem, setOrdem] = useState<Ordem>('nome')
@@ -141,14 +142,17 @@ export default function MembrosPage() {
 
   async function fetchTudo() {
     setLoading(true)
+    setErro('')
+    try {
     const sem = semestreAtual()
-    const [{ data: lista }, pessoais, pend, freqSem] = await Promise.all([
+    const [{ data: lista, error: erroLista }, pessoais, pend, freqSem] = await Promise.all([
       supabase.from('membros').select(COLUNAS_MEMBRO).order('nome'),
       // nascimento, iniciação, elevação, situação e anuidade: o banco só entrega a dono/admin
       carregarDadosPessoais(),
       carregarPendencias().catch(() => null),   // mesma regra do Painel, Pagamentos e Indicadores (lib/pendencias)
       carregarSemestre(sem.ano, sem.semestre),   // reuniões + presenças do semestre: uma consulta para a lista toda
     ])
+    if (erroLista) throw new Error(erroLista.message)
     const m = juntarDadosPessoais((lista ?? []) as MembroLinha[], pessoais)
     setMembros(m)
 
@@ -160,7 +164,11 @@ export default function MembrosPage() {
     setFrequencias(fr)
 
     setDividas(pend?.porMembro ?? {})
-    setLoading(false)
+    } catch (e: any) {
+      setErro(e?.message || 'Erro ao carregar dados')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function transferirSenior(m: { id: string; nome: string }, completou: string) {
@@ -243,7 +251,7 @@ export default function MembrosPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-gray-900">Membros</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{membros.length} cadastrados</p>
+          <p className="text-sm text-gray-400 mt-0.5">{erro ? 'Lista indisponível' : `${membros.length} cadastrados`}</p>
         </div>
         <button onClick={abrirNovo}
           className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90"
@@ -366,6 +374,14 @@ export default function MembrosPage() {
       {/* Grid de cards */}
       {loading ? (
         <div className="py-16 text-center text-sm text-gray-300">Carregando...</div>
+      ) : erro ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-4 text-sm" style={{ background: '#fef2f2', color: '#991b1b' }}>
+          <span>Não foi possível carregar os membros: {erro}</span>
+          <button onClick={fetchTudo}
+            className="text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90" style={{ background: '#c0392b' }}>
+            Tentar de novo
+          </button>
+        </div>
       ) : filtrados.length === 0 ? (
         <div className="py-16 text-center text-sm text-gray-300">Nenhum membro encontrado.</div>
       ) : (

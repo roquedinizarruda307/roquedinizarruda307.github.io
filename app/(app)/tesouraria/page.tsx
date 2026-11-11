@@ -16,11 +16,14 @@ export default function Home() {
   const [dividas, setDividas] = useState({ anuidades: 0, mensalidades: 0, eventos: 0 })
   const [notifs, setNotifs] = useState<{ id: string; nome: string; descricao: string; tipo: string }[]>([])
   const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState('')
+  const [tentativa, setTentativa] = useState(0)   // muda para recarregar ("Tentar de novo")
   const mesAtual = MESES_C[new Date().getMonth()]
 
   useEffect(() => {
     async function load() {
       setLoading(true)
+      setErro('')
       const now = new Date()
       const mes = now.getMonth() + 1
       const ano = now.getFullYear()
@@ -29,12 +32,13 @@ export default function Home() {
       const pa = mes === 12 ? ano + 1 : ano
       const pm2 = String(pm).padStart(2,'0')
 
-      const [{ data: transAll },{ data: transMes }, pend] =
+      const [{ data: transAll, error: e1 },{ data: transMes, error: e2 }, pend] =
         await Promise.all([
           supabase.from('transacoes').select('tipo,valor'),
           supabase.from('transacoes').select('tipo,valor').gte('data',`${ano}-${m}-01`).lt('data',`${pa}-${pm2}-01`),
           carregarPendencias(),
         ])
+      if (e1 || e2) throw new Error((e1 ?? e2)?.message)
 
       const saldo = (transAll??[]).reduce((s,t)=>t.tipo==='entrada'?s+ +t.valor:s- +t.valor,0)
       const receitas = (transMes??[]).filter(t=>t.tipo==='entrada').reduce((s,t)=>s+ +t.valor,0)
@@ -68,8 +72,11 @@ export default function Home() {
 
       setNotifs(notifList)
     }
-    load()
-  }, [])
+    load().catch(e => {
+      setErro(e?.message || 'Erro ao carregar dados')
+      setLoading(false)
+    })
+  }, [tentativa])
 
   const cards = [
     { label: 'Saldo Atual',          value: fmt(stats.saldo),      color: stats.saldo>=0?'#16a34a':'#c0392b', icon: Wallet },
@@ -94,6 +101,16 @@ export default function Home() {
       {/* Conteúdo do dashboard */}
       <div className="p-4 sm:p-7 space-y-5 max-w-6xl">
 
+      {erro && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-4 text-sm" style={{ background: '#fef2f2', color: '#991b1b' }}>
+          <span>Não foi possível carregar os dados: {erro}</span>
+          <button onClick={() => setTentativa(t => t + 1)}
+            className="text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90" style={{ background: '#c0392b' }}>
+            Tentar de novo
+          </button>
+        </div>
+      )}
+
       {/* 5 Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {cards.map(({ label, value, color, icon: Icon }) => (
@@ -102,8 +119,8 @@ export default function Home() {
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 leading-tight pr-2">{label}</p>
               <Icon size={14} className="text-gray-300 flex-shrink-0 mt-0.5" />
             </div>
-            {loading
-              ? <div className="h-6 w-20 rounded bg-gray-100 animate-pulse" />
+            {loading || erro
+              ? erro ? <p className="text-xl font-black text-gray-300">—</p> : <div className="h-6 w-20 rounded bg-gray-100 animate-pulse" />
               : <p className="text-xl font-black" style={{ color }}>{value}</p>}
           </div>
         ))}
