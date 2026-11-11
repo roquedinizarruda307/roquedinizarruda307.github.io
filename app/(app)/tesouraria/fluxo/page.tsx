@@ -123,8 +123,8 @@ export default function FluxoPage() {
             <p className="text-sm text-gray-800 pr-4">{r.descricao}</p>
             <p className="text-sm text-gray-400">{r.categoria ?? '—'}</p>
             <div>
-              {r.recibo_url
-                ? <a href={r.recibo_url} target="_blank" rel="noreferrer" className="text-xs font-medium underline" style={{ color: '#c0392b' }}>Ver</a>
+              {r.recibo_url?.startsWith('https://')
+                ? <a href={r.recibo_url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium underline" style={{ color: '#c0392b' }}>Ver</a>
                 : <span className="text-sm text-gray-300">—</span>}
             </div>
             <p className="text-sm font-semibold" style={{ color: r.tipo === 'entrada' ? '#16a34a' : '#c0392b' }}>

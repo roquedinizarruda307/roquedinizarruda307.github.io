@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { carregarPendencias } from '@/lib/pendencias'
 import { Wallet, TrendingUp, TrendingDown, AlertCircle, Users } from 'lucide-react'
 
 function fmt(v: number) {
@@ -28,57 +29,41 @@ export default function Home() {
       const pa = mes === 12 ? ano + 1 : ano
       const pm2 = String(pm).padStart(2,'0')
 
-      const [{ data: transAll },{ data: transMes },{ data: mensP },{ data: membrosAtivos },{ data: anuP },{ data: evtP }] =
+      const [{ data: transAll },{ data: transMes }, pend] =
         await Promise.all([
           supabase.from('transacoes').select('tipo,valor'),
           supabase.from('transacoes').select('tipo,valor').gte('data',`${ano}-${m}-01`).lt('data',`${pa}-${pm2}-01`),
-          supabase.from('mensalidades').select('membro_id,valor').eq('status','nao_pago'),
-          supabase.from('membros').select('id').eq('status','ativo'),
-          supabase.from('anuidades').select('valor').eq('status','pendente'),
-          supabase.from('pagamentos_eventos').select('valor').eq('status','pendente'),
+          carregarPendencias(),
         ])
 
       const saldo = (transAll??[]).reduce((s,t)=>t.tipo==='entrada'?s+ +t.valor:s- +t.valor,0)
       const receitas = (transMes??[]).filter(t=>t.tipo==='entrada').reduce((s,t)=>s+ +t.valor,0)
       const despesas = (transMes??[]).filter(t=>t.tipo==='saida').reduce((s,t)=>s+ +t.valor,0)
-      const pendencias = (mensP??[]).reduce((s,t)=>s+ +t.valor,0)
-      setStats({ saldo, receitas, despesas, pendencias, ativos: membrosAtivos?.length??0 })
+      setStats({ saldo, receitas, despesas, pendencias: pend.total, ativos: pend.membros.filter(x=>x.status==='ativo').length })
       setDividas({
-        anuidades:   (anuP??[]).reduce((s,t)=>s+ +t.valor,0),
-        mensalidades: pendencias,
-        eventos:     (evtP??[]).reduce((s,t)=>s+ +t.valor,0),
+        anuidades:    pend.anuidades.total,
+        mensalidades: pend.mensalidades.total,
+        eventos:      pend.eventos.total,
       })
-      setLoading(false)   // cards já podem aparecer; notificações carregam em seguida
+      setLoading(false)
 
-      // Notificações: mensalidades nao_pago + eventos atrasados
-      const memIds = [...new Set((mensP??[]).map(r=>r.membro_id))]
+      // Notificações: mensalidades em aberto (mais antigas primeiro) + eventos com valores a receber
+      const nomeMap = Object.fromEntries(pend.membros.map(n=>[n.id,n.nome ?? '—']))
       const notifList: typeof notifs = []
-
-      if (memIds.length) {
-        const { data: nomes } = await supabase.from('membros').select('id,nome').in('id', memIds.slice(0,20))
-        const nomeMap = Object.fromEntries((nomes??[]).map(n=>[n.id,n.nome]))
-        const { data: mensAtrasadas } = await supabase.from('mensalidades')
-          .select('id,membro_id,mes,ano,valor').eq('status','nao_pago')
-          .order('ano').order('mes').limit(10)
-        for (const r of mensAtrasadas??[]) {
-          notifList.push({
-            id: r.id,
-            nome: nomeMap[r.membro_id]??'—',
-            descricao: `Mensalidade ${MESES_C[r.mes-1]}/${r.ano}: ${(+r.valor).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} pendente`,
-            tipo: 'mensalidade',
-          })
-        }
-      }
-
-      const { data: evts } = await supabase.from('pagamentos_eventos')
-        .select('id,nome,valor,status').neq('status','pago').limit(5)
-      for (const ev of evts??[]) {
+      const antigas = [...pend.mensalidades.itens].sort((a,b)=>a.ano-b.ano||a.mes-b.mes).slice(0,10)
+      for (const r of antigas) {
         notifList.push({
-          id: ev.id,
-          nome: ev.nome,
-          descricao: `${ev.nome}: ${(+ev.valor).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} pendente`,
-          tipo: ev.status,
+          id: `${r.membro_id}-${r.ano}-${r.mes}`,
+          nome: nomeMap[r.membro_id]??'—',
+          descricao: `Mensalidade ${MESES_C[r.mes-1]}/${r.ano}: ${fmt(r.valor)} pendente`,
+          tipo: 'mensalidade',
         })
+      }
+      for (const ev of pend.evs) {
+        const aberto = pend.eventos.porEvento[ev.id] ?? 0
+        if (aberto <= 0) continue
+        notifList.push({ id: ev.id, nome: ev.nome ?? 'Evento', descricao: `Evento: ${fmt(aberto)} a receber`, tipo: 'pendente' })
+        if (notifList.length >= 15) break
       }
 
       setNotifs(notifList)

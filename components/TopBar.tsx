@@ -9,6 +9,7 @@ const LABELS: Record<string, string> = {
   '/tesouraria/saidas':     'Saídas',
   '/tesouraria/membros':    'Membros',
   '/tesouraria/pagamentos': 'Pagamentos',
+  '/tesouraria/indicadores': 'Indicadores',
   '/tesouraria/escrivao':   'Escrivão',
   '/tesouraria/ajustes':    'Ajustes',
 }
@@ -18,8 +19,9 @@ export default function TopBar() {
   const label = LABELS[pathname] ??
     LABELS[Object.keys(LABELS).find(k => k !== '/tesouraria' && pathname.startsWith(k)) ?? '/tesouraria'] ?? 'Início'
 
+  // no celular, pl-16 deixa espaço para o botão fixo do menu (Sidebar)
   return (
-    <div className="flex items-center justify-between px-8 py-4 bg-white" style={{ borderBottom: '1px solid #f0f0f0' }}>
+    <div className="flex items-center justify-between pl-16 pr-4 md:px-8 py-4 bg-white min-h-[66px]" style={{ borderBottom: '1px solid #f0f0f0' }}>
       <div>
         <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: '#aaa' }}>Seção Atual</p>
         <p className="text-lg font-black tracking-tight text-gray-900 uppercase">{label}</p>

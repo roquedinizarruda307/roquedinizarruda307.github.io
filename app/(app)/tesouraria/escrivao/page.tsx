@@ -1,14 +1,17 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, Trash2, Check, FileSpreadsheet, FileText } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { exportarWord, escaparHtml } from '@/lib/word'
+import { hojeLocal, fmtDataBR, parseDataLocal } from '@/lib/datas'
 
 type Reuniao = { id: string; data: string; titulo: string; ata: string }
 
-const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
+// nunca mostra "Invalid Date": data vazia/inválida vira '—'
+const fmtData = (d: string) => fmtDataBR(d)
+const DEBOUNCE_MS = 800
 
 export default function EscrivaoPage() {
   const [reunioes, setReunioes] = useState<Reuniao[]>([])
@@ -19,6 +22,11 @@ export default function EscrivaoPage() {
   const [salvandoAta, setSalvandoAta] = useState(false)
   const [ataSalva, setAtaSalva] = useState(false)
   const [loading, setLoading] = useState(true)
+  // gravação adiada de título/data (evita gravar a cada tecla)
+  const pendente = useRef<{ id: string; campos: Partial<Pick<Reuniao, 'data' | 'titulo'>> } | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // último valor válido salvo de cada reunião (para restaurar data vazia/inválida)
+  const salvo = useRef<Record<string, { data: string; titulo: string }>>({})
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -35,6 +43,7 @@ export default function EscrivaoPage() {
   useEffect(() => { carregar() }, [carregar])
 
   async function selecionar(r: Reuniao) {
+    await gravarPendente()
     setSel(r); setAta(r.ata ?? ''); setAtaSalva(false)
     const { data } = await supabase.from('reuniao_presencas').select('membro_id, presente').eq('reuniao_id', r.id)
     const mapa: Record<string, boolean> = {}
@@ -43,7 +52,8 @@ export default function EscrivaoPage() {
   }
 
   async function novaReuniao() {
-    const hoje = new Date().toISOString().slice(0, 10)
+    await gravarPendente()
+    const hoje = hojeLocal()
     const { data } = await supabase.from('reunioes').insert([{ data: hoje, titulo: 'Reunião', ata: '' }]).select('*').single()
     if (data) { await carregar(); selecionar(data as Reuniao) }
   }
@@ -73,25 +83,61 @@ export default function EscrivaoPage() {
     setTimeout(() => setAtaSalva(false), 2500)
   }
 
-  async function atualizarCampo(campo: 'data' | 'titulo', valor: string) {
+  // grava o que estiver pendente agora (blur, troca de reunião, saída da tela)
+  async function gravarPendente() {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    const p = pendente.current
+    pendente.current = null
+    if (!p || !Object.keys(p.campos).length) return
+    const { error } = await supabase.from('reunioes').update(p.campos).eq('id', p.id)
+    if (!error) salvo.current[p.id] = { ...(salvo.current[p.id] ?? { data: '', titulo: '' }), ...p.campos }
+  }
+
+  function atualizarCampo(campo: 'data' | 'titulo', valor: string) {
     if (!sel) return
+    if (!salvo.current[sel.id]) salvo.current[sel.id] = { data: sel.data, titulo: sel.titulo }
+    // mostra na tela na hora
     setSel({ ...sel, [campo]: valor })
     setReunioes(prev => prev.map(r => r.id === sel.id ? { ...r, [campo]: valor } : r))
-    await supabase.from('reunioes').update({ [campo]: valor }).eq('id', sel.id)
+    // data vazia ou inválida não é gravada (a anterior volta no blur)
+    const valido = campo === 'data' ? !!parseDataLocal(valor) : true
+    const atual = pendente.current?.id === sel.id ? pendente.current.campos : {}
+    const campos = { ...atual }
+    if (valido) campos[campo] = valor
+    else delete campos[campo]
+    pendente.current = { id: sel.id, campos }
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => { gravarPendente() }, DEBOUNCE_MS)
   }
+
+  // ao sair do campo: grava já; se a data ficou vazia/inválida, restaura a última válida
+  function aoSairDoCampo(campo: 'data' | 'titulo') {
+    if (!sel) return
+    if (campo === 'data' && !parseDataLocal(sel.data)) {
+      const anterior = salvo.current[sel.id]?.data
+      if (anterior) {
+        setSel({ ...sel, data: anterior })
+        setReunioes(prev => prev.map(r => r.id === sel.id ? { ...r, data: anterior } : r))
+      }
+    }
+    gravarPendente()
+  }
+
+  // grava o pendente se a pessoa sair da tela antes do debounce
+  useEffect(() => () => { gravarPendente() }, [])
 
   function exportarPresenca() {
     if (!sel) return
     const linhas: (string | number)[][] = [[`Reunião ${sel.titulo} — ${fmtData(sel.data)}`], [], ['Membro', 'Presença']]
-    for (const m of membros) linhas.push([m.nome, presencas[m.id] ? 'Presente' : 'Ausente'])
+    for (const m of membrosLista) linhas.push([m.nome, presencas[m.id] ? 'Presente' : 'Ausente'])
     linhas.push([]); linhas.push(['Total presentes', presentes])
     exportarExcel(`presenca_${sel.data}.xlsx`, linhas, 'Presença')
   }
 
   function exportarAtaWord() {
     if (!sel) return
-    const presentesNomes = membros.filter(m => presencas[m.id]).map(m => m.nome)
-    const ausentesNomes = membros.filter(m => !presencas[m.id]).map(m => m.nome)
+    const presentesNomes = membrosLista.filter(m => presencas[m.id]).map(m => m.nome)
+    const ausentesNomes = membrosLista.filter(m => !presencas[m.id]).map(m => m.nome)
     const corpo =
       `<h2 style="text-align:center;margin:0 0 4px">Capítulo Roque Diniz Arruda nº 307</h2>` +
       `<p style="text-align:center;color:#666;margin:0 0 18px">Ordem DeMolay</p>` +
@@ -105,7 +151,9 @@ export default function EscrivaoPage() {
     exportarWord(`ata_${sel.data}`, `Ata ${fmtData(sel.data)}`, corpo)
   }
 
-  const presentes = membros.filter(m => presencas[m.id]).length
+  // Membros afastados não entram na lista/contagem, exceto se marcados presentes nesta reunião (preserva histórico)
+  const membrosLista = membros.filter(m => (m.status as string) !== 'afastado' || presencas[m.id])
+  const presentes = membrosLista.filter(m => presencas[m.id]).length
 
   return (
     <div className="p-4 sm:p-7 max-w-6xl">
@@ -153,12 +201,12 @@ export default function EscrivaoPage() {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-wrap items-end gap-4">
               <div className="flex-1 min-w-[160px]">
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Título</label>
-                <input value={sel.titulo} onChange={e => atualizarCampo('titulo', e.target.value)}
+                <input value={sel.titulo} onChange={e => atualizarCampo('titulo', e.target.value)} onBlur={() => aoSairDoCampo('titulo')}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-semibold" />
               </div>
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Data</label>
-                <input type="date" value={sel.data} onChange={e => atualizarCampo('data', e.target.value)}
+                <input type="date" value={sel.data ?? ''} onChange={e => atualizarCampo('data', e.target.value)} onBlur={() => aoSairDoCampo('data')}
                   className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
               </div>
             </div>
@@ -169,7 +217,7 @@ export default function EscrivaoPage() {
                 <p className="text-sm font-black uppercase tracking-widest text-gray-700">Presença</p>
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: '#f0fdf4', color: '#16a34a' }}>
-                    {presentes}/{membros.length} presentes
+                    {presentes}/{membrosLista.length} presentes
                   </span>
                   <button onClick={exportarPresenca} className="text-gray-400 hover:text-emerald-600" title="Exportar Excel">
                     <FileSpreadsheet size={16} />
@@ -177,7 +225,7 @@ export default function EscrivaoPage() {
                 </div>
               </div>
               <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
-                {membros.map(m => {
+                {membrosLista.map(m => {
                   const presente = !!presencas[m.id]
                   return (
                     <div key={m.id} className="flex items-center justify-between px-5 py-2.5">

@@ -6,21 +6,25 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
 
 type Estado = 'verificando' | 'liberado' | 'pendente'
 
+// Papéis que dão acesso à área logada ('dono' = admin). Qualquer outro valor = sem acesso.
+const PAPEIS_VALIDOS = ['dono', 'admin', 'escrivao']
+
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [estado, setEstado] = useState<Estado>('verificando')
   const router = useRouter()
 
   useEffect(() => {
-    // Sem Supabase configurado, libera (modo desenvolvimento)
-    if (!isSupabaseConfigured()) { setEstado('liberado'); return }
+    // Sem Supabase configurado: libera só em desenvolvimento local; em produção bloqueia.
+    if (!isSupabaseConfigured()) { setEstado(process.env.NODE_ENV === 'production' ? 'pendente' : 'liberado'); return }
 
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { router.replace('/login'); return }
-      // verifica aprovação no perfil
-      const { data } = await supabase.from('perfis').select('aprovado').eq('email', (user.email ?? '').toLowerCase()).maybeSingle()
-      if (data && data.aprovado === false) setEstado('pendente')
-      else setEstado('liberado')   // sem registro = conta antiga liberada; ou aprovado
+      // Nega por padrão: só libera com perfil existente, aprovado e papel conhecido.
+      // Sem perfil, não aprovado, papel desconhecido ou erro na consulta = sem acesso.
+      const { data, error } = await supabase.from('perfis').select('aprovado,papel').eq('email', (user.email ?? '').trim().toLowerCase()).maybeSingle()
+      if (!error && data && data.aprovado === true && PAPEIS_VALIDOS.includes(data.papel)) setEstado('liberado')
+      else setEstado('pendente')
     })
   }, [router])
 
@@ -37,7 +41,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         <div>
           <p style={{ color: '#fff', fontSize: 18, fontWeight: 800 }}>Conta aguardando aprovação</p>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginTop: 6, maxWidth: 340 }}>
-            Sua conta foi criada, mas precisa ser aprovada por um administrador do capítulo antes de acessar o sistema.
+            Sua conta ainda não tem acesso liberado. Um administrador do capítulo precisa aprovar seu acesso antes de você entrar no sistema.
           </p>
         </div>
         <button onClick={sair} style={{ marginTop: 8, color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 22px', cursor: 'pointer' }}>

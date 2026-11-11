@@ -13,6 +13,7 @@ export default function AjustesPage() {
   const { papel } = usePapel()
   const [perfis, setPerfis] = useState<Perfil[]>([])
   const [pendentes, setPendentes] = useState<Perfil[]>([])
+  const [todosPerfis, setTodosPerfis] = useState<Perfil[]>([])
   const [novoEmail, setNovoEmail] = useState('')
   const [saldo, setSaldo] = useState<number | null>(null)
   const [alvo, setAlvo] = useState('')
@@ -30,6 +31,7 @@ export default function AjustesPage() {
   async function carregarPerfis() {
     const { data } = await supabase.from('perfis').select('*').order('email')
     const todos = (data ?? []) as (Perfil & { aprovado: boolean })[]
+    setTodosPerfis(todos)
     setPerfis(todos.filter(p => p.aprovado && p.papel === 'escrivao'))
     setPendentes(todos.filter(p => !p.aprovado))
   }
@@ -39,7 +41,9 @@ export default function AjustesPage() {
     carregarPerfis()
   }
 
+  // Recusar apaga o perfil: sem perfil = sem acesso (o AuthGuard nega por padrão).
   async function recusar(email: string) {
+    if (!confirm(`Recusar o acesso de ${email}?`)) return
     await supabase.from('perfis').delete().eq('email', email)
     carregarPerfis()
   }
@@ -48,11 +52,15 @@ export default function AjustesPage() {
     e.preventDefault()
     const email = novoEmail.trim().toLowerCase()
     if (!email) return
-    await supabase.from('perfis').upsert({ email, papel: 'escrivao' }, { onConflict: 'email' })
+    // Libera o e-mail como escrivão (aprovado). Não rebaixa admin existente.
+    if (todosPerfis.some(p => p.email === email && (p.papel === 'admin' || p.papel === 'dono'))) { alert('Este e-mail já é administrador.'); return }
+    await supabase.from('perfis').upsert({ email, papel: 'escrivao', aprovado: true }, { onConflict: 'email' })
     setNovoEmail(''); carregarPerfis()
   }
 
+  // Remover apaga o perfil: a pessoa perde todo o acesso (não vira admin).
   async function removerEscrivao(email: string) {
+    if (!confirm(`Remover o acesso de ${email}? A pessoa ficará sem acesso ao sistema.`)) return
     await supabase.from('perfis').delete().eq('email', email)
     carregarPerfis()
   }
@@ -206,7 +214,7 @@ export default function AjustesPage() {
 
           <div className="space-y-1.5">
             {perfis.length === 0 ? (
-              <p className="text-sm text-gray-300">Nenhum escrivão definido. Todos com conta têm acesso completo.</p>
+              <p className="text-sm text-gray-300">Nenhum escrivão definido.</p>
             ) : perfis.map(p => (
               <div key={p.email} className="flex items-center justify-between bg-gray-50 rounded-lg px-3.5 py-2.5">
                 <span className="text-sm text-gray-700">{p.email}</span>
@@ -218,7 +226,7 @@ export default function AjustesPage() {
           </div>
 
           <p className="text-xs text-gray-400">
-            A conta precisa ser criada normalmente (na tela de login → "Criar conta"). Depois adicione o e-mail aqui para limitar o acesso só ao Escrivão.
+            A pessoa cria a conta normalmente (na tela de login → "Criar conta"). Adicionar o e-mail aqui libera o acesso só à aba Escrivão. Remover tira todo o acesso.
           </p>
         </div>
       )}

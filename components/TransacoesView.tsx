@@ -206,8 +206,8 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
             <p className="text-sm text-gray-800 pr-4">{r.descricao}</p>
             <p className="text-sm text-gray-400">{r.origem_destino || '—'}</p>
             <div>
-              {r.recibo_url
-                ? <a href={r.recibo_url} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: cor }}>Ver</a>
+              {r.recibo_url?.startsWith('https://')
+                ? <a href={r.recibo_url} target="_blank" rel="noopener noreferrer" className="text-xs underline" style={{ color: cor }}>Ver</a>
                 : <span className="text-sm text-gray-300">—</span>}
             </div>
             <p className="text-sm font-semibold" style={{ color: cor }}>
