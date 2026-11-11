@@ -141,9 +141,9 @@ for (const [i, r] of linhas.slice(1).entries()) {
   // > 1 linha = ambiguidade -> raise exception (desfaz tudo); 0 linha = só aviso no fim.
   updates.push([
     `  update public.membros set ${set} where ${onde};`,
-    `  get diagnostics n = row_count;`,
-    `  if n > 1 then raise exception 'Matrícula % casou % membros (esperado no máximo 1). Importação desfeita.', ${sqlStr(id)}, n; end if;`,
-    `  if n = 0 then sem_par := sem_par || ${sqlStr(id)}::text; end if;`,
+    `  get diagnostics v_n = row_count;`,
+    `  if v_n > 1 then raise exception 'Matrícula % casou % membros (esperado no máximo 1). Importação desfeita.', ${sqlStr(id)}, v_n; end if;`,
+    `  if v_n = 0 then v_sem_par := v_sem_par || ${sqlStr(id)}::text; end if;`,
   ].join('\n'))
 }
 
@@ -163,33 +163,33 @@ begin;
 -- Contagem de linhas de todas as tabelas do schema public ANTES
 create temp table _contagem_antes (tabela text primary key, n bigint) on commit drop;
 do $$
-declare t record; n bigint;
+declare t record; v_n bigint;
 begin
   for t in select c.relname from pg_class c join pg_namespace s on s.oid = c.relnamespace
             where s.nspname = 'public' and c.relkind in ('r', 'p') loop
-    execute format('select count(*) from public.%I', t.relname) into n;
-    insert into _contagem_antes values (t.relname, n);
+    execute format('select count(*) from public.%I', t.relname) into v_n;
+    insert into _contagem_antes (tabela, n) values (t.relname, v_n);
   end loop;
 end $$;
 
 -- Atualizações (uma por membro da planilha)
 do $$
-declare n bigint; sem_par text[] := '{}';
+declare v_n bigint; v_sem_par text[] := '{}';
 begin
 ${updates.join('\n')}
-  if cardinality(sem_par) > 0 then
-    raise notice 'Aviso: % matrícula(s) da planilha sem membro no site (0 linhas): %', cardinality(sem_par), array_to_string(sem_par, ', ');
+  if cardinality(v_sem_par) > 0 then
+    raise notice 'Aviso: % matrícula(s) da planilha sem membro no site (0 linhas): %', cardinality(v_sem_par), array_to_string(v_sem_par, ', ');
   end if;
 end $$;
 
 -- Verificação: contagens iguais antes e depois (senão desfaz tudo)
 do $$
-declare t record; n bigint;
+declare t record; v_n bigint;
 begin
-  for t in select tabela, n from _contagem_antes loop
-    execute format('select count(*) from public.%I', t.tabela) into n;
-    if n <> t.n then
-      raise exception 'Contagem mudou em %: antes %, depois %. Importação desfeita.', t.tabela, t.n, n;
+  for t in select c.tabela, c.n from _contagem_antes c loop
+    execute format('select count(*) from public.%I', t.tabela) into v_n;
+    if v_n <> t.n then
+      raise exception 'Contagem mudou em %: antes %, depois %. Importação desfeita.', t.tabela, t.n, v_n;
     end if;
   end loop;
   raise notice 'Contagens conferidas: nenhuma tabela mudou de tamanho.';

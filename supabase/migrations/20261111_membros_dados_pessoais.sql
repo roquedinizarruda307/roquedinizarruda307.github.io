@@ -37,12 +37,12 @@ begin;
 -- ---------- 0) contagem de linhas de todas as tabelas (antes) ---------------
 create temp table _contagem_antes (tabela text primary key, n bigint) on commit drop;
 do $$
-declare t record; n bigint;
+declare t record; v_n bigint;
 begin
   for t in select c.relname from pg_class c join pg_namespace s on s.oid = c.relnamespace
             where s.nspname = 'public' and c.relkind in ('r', 'p') loop
-    execute format('select count(*) from public.%I', t.relname) into n;
-    insert into _contagem_antes values (t.relname, n);
+    execute format('select count(*) from public.%I', t.relname) into v_n;
+    insert into _contagem_antes (tabela, n) values (t.relname, v_n);
   end loop;
 end $$;
 
@@ -113,12 +113,12 @@ end $$;
 
 -- ---------- 3) verificação: nenhuma tabela mudou de tamanho -----------------
 do $$
-declare t record; n bigint;
+declare t record; v_n bigint;
 begin
-  for t in select tabela, n from _contagem_antes loop
-    execute format('select count(*) from public.%I', t.tabela) into n;
-    if n <> t.n then
-      raise exception 'Contagem mudou em %: antes %, depois %. Migração desfeita.', t.tabela, t.n, n;
+  for t in select c.tabela, c.n from _contagem_antes c loop
+    execute format('select count(*) from public.%I', t.tabela) into v_n;
+    if v_n <> t.n then
+      raise exception 'Contagem mudou em %: antes %, depois %. Migração desfeita.', t.tabela, t.n, v_n;
     end if;
   end loop;
   if not has_function_privilege('authenticated', 'public.membros_dados_pessoais()', 'execute') then
