@@ -59,8 +59,10 @@ export const supabase = new Proxy(cliente, {
 export type Membro = {
   id: string
   nome: string
-  email: string
-  telefone: string
+  // email/telefone são dados pessoais: não vêm em COLUNAS_MEMBRO (lib/membros.ts)
+  email?: string
+  telefone?: string
+  matricula?: string | null
   cargo: string
   status: 'ativo' | 'senior' | 'afastado'
   data_entrada: string

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
+import { COLUNAS_MEMBRO } from '@/lib/membros'
 import { Plus, Trash2, Check, FileSpreadsheet, FileText } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { exportarWord, escaparHtml } from '@/lib/word'
@@ -35,7 +36,7 @@ export default function EscrivaoPage() {
     setLoading(true)
     const [{ data: r }, { data: m }] = await Promise.all([
       supabase.from('reunioes').select('*').order('data', { ascending: false }),
-      supabase.from('membros').select('*').order('nome'),
+      supabase.from('membros').select(COLUNAS_MEMBRO).order('nome'),
     ])
     setReunioes((r ?? []) as Reuniao[])
     setMembros([...(m ?? [])].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })))

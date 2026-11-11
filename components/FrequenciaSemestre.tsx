@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FileSpreadsheet } from 'lucide-react'
 import { supabase, type Membro } from '@/lib/supabase'
+import { COLUNAS_MEMBRO } from '@/lib/membros'
 import { exportarExcel } from '@/lib/excel'
 import { CAMPO_FALTA_JUSTIFICADA, FREQUENCIA_MINIMA } from '@/lib/escrivao'
 import { apareceNoPeriodo, calcularFrequencia, carregarSemestre, fmtPct, rotuloSemestre, semestreAtual,
@@ -23,7 +24,7 @@ export default function FrequenciaSemestre() {
   useEffect(() => {
     let cancelado = false
     setLoading(true)
-    Promise.all([carregarSemestre(ano, semestre), supabase.from('membros').select('*')]).then(([sem, { data: m }]) => {
+    Promise.all([carregarSemestre(ano, semestre), supabase.from('membros').select(COLUNAS_MEMBRO)]).then(([sem, { data: m }]) => {
       if (cancelado) return
       setReunioes(sem.reunioes); setPresencas(sem.presencas); setMembros((m ?? []) as Membro[]); setLoading(false)
     })

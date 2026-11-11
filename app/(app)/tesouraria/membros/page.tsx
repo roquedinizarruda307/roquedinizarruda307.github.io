@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, X, AlertCircle, UserCheck, List, Cake, ArrowRightCircle } from 'lucide-react'
+import { Plus, Search, X, AlertCircle, UserCheck, List, Cake, ArrowRightCircle, ChevronDown } from 'lucide-react'
 import { carregarPendencias } from '@/lib/pendencias'
 import { usePapel, ehAdmin } from '@/components/PapelContext'
-import { hojeLocal } from '@/lib/datas'
+import { hojeLocal, hojeDate, parseDataLocal, fmtDataBR } from '@/lib/datas'
+import { COLUNAS_MEMBRO, SITUACOES, infoSituacao, carregarDadosPessoais, juntarDadosPessoais, type Situacao, type MembroLinha } from '@/lib/membros'
 import { infoMaioridade, DIAS_AVISO_21 } from '@/lib/maioridade'
 import { ehMesCobrado, filtroEmAberto } from '@/lib/mensalidades'
 import PresencaMembro from '@/components/PresencaMembro'
@@ -22,6 +23,35 @@ const STATUS: Record<Status, { label: string; color: string }> = {
   senior:   { label: 'Sênior',  color: '#1d4ed8' },
   afastado: { label: 'Afastado', color: '#9ca3af' },
 }
+/** Idade completa em anos na data `hoje` (null se a data for inválida). */
+function idadeEm(nasc: Date, hoje: Date) {
+  let anos = hoje.getFullYear() - nasc.getFullYear()
+  if (hoje.getMonth() < nasc.getMonth() || (hoje.getMonth() === nasc.getMonth() && hoje.getDate() < nasc.getDate())) anos--
+  return anos
+}
+
+type FiltroSit = 'todas' | Situacao | 'sem'
+type Ordem = 'nome' | 'situacao' | 'anuidade'
+
+/** Linha "rótulo — valor" dos dados da Ordem. */
+function LinhaDado({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{rotulo}</span>
+      <span className="text-sm font-semibold text-gray-800 text-right">{children}</span>
+    </div>
+  )
+}
+
+function BadgeSituacao({ situacao }: { situacao?: string | null }) {
+  const s = infoSituacao(situacao)
+  if (!s) return <span className="text-sm font-semibold text-gray-400">—</span>
+  return (
+    <span className="inline-block text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+      style={{ background: s.fundo, color: s.cor }}>{s.label}</span>
+  )
+}
+
 const CATEGORIA: Record<Status, string> = {
   ativo:    'Demolay Ativo',
   senior:   'Demolay Sênior',
@@ -98,6 +128,8 @@ export default function MembrosPage() {
   const podeAdministrar = !carregandoPapel && ehAdmin(papel)
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
+  const [filtroSit, setFiltroSit] = useState<FiltroSit>('todas')
+  const [ordem, setOrdem] = useState<Ordem>('nome')
   const [showForm, setShowForm] = useState(false)
   const [editando, setEditando] = useState<any | null>(null)
   const [modal, setModal] = useState<any | null>(null)
@@ -110,12 +142,15 @@ export default function MembrosPage() {
   async function fetchTudo() {
     setLoading(true)
     const sem = semestreAtual()
-    const [{ data: m }, pend, freqSem] = await Promise.all([
-      supabase.from('membros').select('*').order('nome'),
+    const [{ data: lista }, pessoais, pend, freqSem] = await Promise.all([
+      supabase.from('membros').select(COLUNAS_MEMBRO).order('nome'),
+      // nascimento, iniciação, elevação, situação e anuidade: o banco só entrega a dono/admin
+      carregarDadosPessoais(),
       carregarPendencias().catch(() => null),   // mesma regra do Painel, Pagamentos e Indicadores (lib/pendencias)
       carregarSemestre(sem.ano, sem.semestre),   // reuniões + presenças do semestre: uma consulta para a lista toda
     ])
-    setMembros(m ?? [])
+    const m = juntarDadosPessoais((lista ?? []) as MembroLinha[], pessoais)
+    setMembros(m)
 
     // Frequência do semestre atual (mesmo cálculo da ficha e da aba Frequência)
     const presPorMembro = new Map<string, PresencaFreq[]>()
@@ -169,15 +204,36 @@ export default function MembrosPage() {
     fetchTudo()
   }
 
-  const maioridade = Object.fromEntries(membros.map(m => [m.id, infoMaioridade(m)]))
+  // Nascimento é dado pessoal: o aviso de 21 anos só aparece para dono/admin (o banco também não entrega ao escrivão)
+  const maioridade = Object.fromEntries(membros.map(m => [m.id, podeAdministrar ? infoMaioridade(m) : null]))
   const jaCompletaram = membros.filter(m => maioridade[m.id]?.estado === 'completou')
   const proximos = membros.filter(m => maioridade[m.id]?.estado === 'em_breve')
     .sort((a, b) => (maioridade[a.id]!.dias - maioridade[b.id]!.dias))
 
-  const filtrados = membros.filter(m =>
-    m.nome.toLowerCase().includes(busca.toLowerCase()) ||
-    (m.matricula ?? '').toLowerCase().includes(busca.toLowerCase())
-  )
+  const hoje = hojeDate()
+  const anuidadeVencida = (m: { anuidade_vencimento?: string | null }) => {
+    const d = parseDataLocal(m.anuidade_vencimento)
+    return !!d && d < hoje
+  }
+  const contagemSit = (s: FiltroSit) => membros.filter(m =>
+    s === 'todas' ? true : s === 'sem' ? !infoSituacao(m.situacao) : infoSituacao(m.situacao)?.id === s).length
+  const temDadosOrdem = podeAdministrar && membros.some(m => m.situacao || m.data_nascimento || m.data_iniciacao)
+
+  const termo = busca.toLowerCase()
+  const ordemSit = (s?: string | null) => { const i = SITUACOES.findIndex(x => x.id === infoSituacao(s)?.id); return i < 0 ? 99 : i }
+  const filtrados = membros
+    .filter(m => m.nome.toLowerCase().includes(termo) || (m.matricula ?? '').toLowerCase().includes(termo))
+    .filter(m => !podeAdministrar || filtroSit === 'todas'
+      || (filtroSit === 'sem' ? !infoSituacao(m.situacao) : infoSituacao(m.situacao)?.id === filtroSit))
+    .sort((a, b) => {
+      if (podeAdministrar && ordem === 'situacao') return ordemSit(a.situacao) - ordemSit(b.situacao) || a.nome.localeCompare(b.nome)
+      if (podeAdministrar && ordem === 'anuidade') {
+        // vencimento mais antigo primeiro; sem data no fim
+        const da = a.anuidade_vencimento ?? '9999', db = b.anuidade_vencimento ?? '9999'
+        return da.localeCompare(db) || a.nome.localeCompare(b.nome)
+      }
+      return a.nome.localeCompare(b.nome)
+    })
 
   return (
     <div className="p-4 sm:p-7 max-w-6xl space-y-5">
@@ -278,6 +334,35 @@ export default function MembrosPage() {
           className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white" />
       </div>
 
+      {/* Filtro por situação e ordenação (só dono/admin, quando há dados da Ordem) */}
+      {temDadosOrdem && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+          <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:pb-0" role="group" aria-label="Filtrar por situação">
+            {([['todas', 'Todas'], ...SITUACOES.map(s => [s.id, s.label]), ['sem', 'Sem situação']] as [FiltroSit, string][])
+              .filter(([id]) => id !== 'sem' || contagemSit('sem') > 0)
+              .map(([id, label]) => {
+                const ativo = filtroSit === id
+                return (
+                  <button key={id} type="button" onClick={() => setFiltroSit(id)} aria-pressed={ativo}
+                    className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors"
+                    style={ativo ? { background: '#111827', color: '#fff', borderColor: '#111827' } : { background: '#fff', color: '#6b7280', borderColor: '#e5e7eb' }}>
+                    {label} <span className="opacity-60">{contagemSit(id)}</span>
+                  </button>
+                )
+              })}
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-500 sm:ml-auto">
+            Ordenar
+            <select value={ordem} onChange={e => setOrdem(e.target.value as Ordem)}
+              className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white">
+              <option value="nome">Nome</option>
+              <option value="situacao">Situação</option>
+              <option value="anuidade">Vencimento da anuidade</option>
+            </select>
+          </label>
+        </div>
+      )}
+
       {/* Grid de cards */}
       {loading ? (
         <div className="py-16 text-center text-sm text-gray-300">Carregando...</div>
@@ -337,6 +422,41 @@ export default function MembrosPage() {
                     <Cake size={13} /> Completa 21 anos em {mai.dataBR}
                   </p>
                 )}
+
+                {/* Dados da Ordem (só dono/admin; o banco não entrega ao escrivão) */}
+                {podeAdministrar && (() => {
+                  const nasc = parseDataLocal(m.data_nascimento)
+                  const vencida = anuidadeVencida(m)
+                  return (
+                    <details className="group rounded-xl border border-gray-100 bg-gray-50/60">
+                      <summary className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-3 py-2.5 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 whitespace-nowrap">Dados da Ordem</span>
+                        <span className="flex items-center gap-1.5 ml-auto">
+                          {vencida && (
+                            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                              style={{ background: '#fee2e2', color: '#b91c1c' }}>Anuidade vencida</span>
+                          )}
+                          <BadgeSituacao situacao={m.situacao} />
+                          <ChevronDown size={14} className="text-gray-400 transition-transform group-open:rotate-180" />
+                        </span>
+                      </summary>
+                      <div className="px-3 pb-3 pt-1 space-y-2">
+                        <LinhaDado rotulo="Matrícula">{m.matricula || '—'}</LinhaDado>
+                        <LinhaDado rotulo="Nascimento">
+                          {nasc ? <>{fmtDataBR(nasc)} <span className="text-xs text-gray-400">({idadeEm(nasc, hoje)} anos)</span></> : '—'}
+                        </LinhaDado>
+                        <LinhaDado rotulo="Iniciação">{fmtDataBR(m.data_iniciacao)}</LinhaDado>
+                        <LinhaDado rotulo="Elevação">{fmtDataBR(m.data_elevacao)}</LinhaDado>
+                        <LinhaDado rotulo="Situação"><BadgeSituacao situacao={m.situacao} /></LinhaDado>
+                        <LinhaDado rotulo="Anuidade vence">
+                          <span style={vencida ? { color: '#b91c1c', fontWeight: 700 } : undefined}>
+                            {fmtDataBR(m.anuidade_vencimento)}{vencida ? ' (vencida)' : ''}
+                          </span>
+                        </LinhaDado>
+                      </div>
+                    </details>
+                  )
+                })()}
 
                 {/* Linha divisória */}
                 <div style={{ borderTop: '1px solid #f3f3f3' }} />

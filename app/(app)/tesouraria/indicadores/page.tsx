@@ -5,6 +5,12 @@ import { AlertCircle, Users, Cake, Info } from 'lucide-react'
 import { buscarTodas, resumoAno, mensalidadesEmAberto, competenciaAtual, primeiroAnoMens, type MensP } from '@/lib/pendencias'
 import { infoMaioridade, proximosSemestres, IDADE_MAIORIDADE } from '@/lib/maioridade'
 import { parseDataLocal, aniversarioDe, fmtDataBR } from '@/lib/datas'
+import { COLUNAS_MEMBRO, carregarDadosPessoais, juntarDadosPessoais } from '@/lib/membros'
+import { serieIniciacoes, serieArrecadacao, serieEmDia } from '@/lib/semestral'
+import EvolucaoSemestral, { type Metrica, type SerieMetrica } from '@/components/EvolucaoSemestral'
+import { usePapel, ehAdmin } from '@/components/PapelContext'
+
+type TransI = { tipo: string; valor: number | string; data: string }
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -12,7 +18,7 @@ const pctTxt = (v: number) => `${Math.round(v * 100)}%`
 
 type MembroI = {
   id: string; nome: string; status: string; data_entrada?: string | null
-  situacao?: string | null; data_nascimento?: string | null
+  situacao?: string | null; data_nascimento?: string | null; data_iniciacao?: string | null
 }
 
 const SITUACOES = [
@@ -49,16 +55,41 @@ export default function IndicadoresPage() {
   const [erro, setErro] = useState('')
   const [ate] = useState(competenciaAtual)   // estável entre renderizações
   const [ano, setAno] = useState(ate.ano)
+  const [trans, setTrans] = useState<TransI[] | null>(null)   // null = não foi possível ler o caixa
+  const { papel, carregando: carregandoPapel } = usePapel()
+  const admin = !carregandoPapel && ehAdmin(papel)
 
   useEffect(() => {
-    // select('*'): situacao/data_nascimento vêm automaticamente quando a migração existir
+    // Colunas comuns da tabela + dados pessoais pela função do banco (só dono/admin recebem)
     Promise.all([
-      buscarTodas<MembroI>('membros', '*'),
+      buscarTodas<MembroI>('membros', COLUNAS_MEMBRO),
+      carregarDadosPessoais(),
       buscarTodas<MensP>('mensalidades', 'id, membro_id, mes, ano, valor, status'),
-    ]).then(([m, ms]) => { setMembros(m); setMens(ms) })
+      buscarTodas<TransI>('transacoes', 'tipo, valor, data', q => q.eq('tipo', 'entrada')).catch(() => null),
+    ]).then(([m, pessoais, ms, tr]) => { setMembros(juntarDadosPessoais(m, pessoais)); setMens(ms); setTrans(tr) })
       .catch(e => setErro(e?.message ?? 'Erro ao carregar dados'))
       .finally(() => setLoading(false))
   }, [])
+
+  // ── 0. Evolução semestral
+  const series = useMemo<Record<Metrica, SerieMetrica>>(() => {
+    const semAtual = { ano: ate.ano, s: (ate.mes <= 6 ? 1 : 2) as 1 | 2 }
+    const datasIni = membros.map(m => m.data_iniciacao)
+    const iniciacoes = admin ? serieIniciacoes(datasIni, semAtual) : []
+    return {
+      iniciacoes: {
+        pontos: iniciacoes,
+        aviso: iniciacoes.length > 0 ? null
+          : !admin ? 'As datas de iniciação são dados pessoais e aparecem só para dono e admin.'
+          : 'As datas de iniciação ainda não foram importadas. Assim que forem, o gráfico de iniciações por semestre aparece aqui.',
+      },
+      arrecadacao: {
+        pontos: trans ? serieArrecadacao(trans, semAtual) : [],
+        aviso: trans === null ? 'Não foi possível ler as entradas do caixa com esta conta.' : null,
+      },
+      emdia: { pontos: serieEmDia(membros, mens, ate), aviso: null },
+    }
+  }, [membros, mens, trans, ate, admin])
 
   const anos = useMemo(() => {
     const ini = primeiroAnoMens(mens, ate)
@@ -106,6 +137,9 @@ export default function IndicadoresPage() {
       </div>
 
       {erro && <Vazio>Não foi possível carregar os dados: {erro}</Vazio>}
+
+      {/* ── 0. Evolução semestral ─────────────────────────────────────── */}
+      <EvolucaoSemestral series={series} />
 
       {/* ── 1. Mensalidades ───────────────────────────────────────────── */}
       <Card titulo="Mensalidades pagas por mês" icone={AlertCircle}>
@@ -186,8 +220,9 @@ export default function IndicadoresPage() {
       <Card titulo="Situação dos membros" icone={Users}>
         {comSituacao.length === 0 ? (
           <Vazio>
+            {!admin ? 'A situação dos membros é dado pessoal e aparece só para dono e admin.' : <>
             Ainda não há situação (Regular / Irregular / Inativo) cadastrada para os membros.
-            Assim que os dados forem importados, o gráfico aparece aqui.
+            Assim que os dados forem importados, o gráfico aparece aqui.</>}
           </Vazio>
         ) : (
           <>
@@ -224,8 +259,9 @@ export default function IndicadoresPage() {
       <Card titulo={`Saída por maioridade (${IDADE_MAIORIDADE} anos)`} icone={Cake}>
         {ativosComNasc.length === 0 ? (
           <Vazio>
+            {!admin ? 'As datas de nascimento são dados pessoais e aparecem só para dono e admin.' : <>
             Ainda não há datas de nascimento cadastradas para os membros ativos.
-            Assim que os dados forem importados, a previsão por semestre aparece aqui.
+            Assim que os dados forem importados, a previsão por semestre aparece aqui.</>}
           </Vazio>
         ) : (
           <>

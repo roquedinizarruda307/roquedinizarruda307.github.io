@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, type Membro } from '@/lib/supabase'
+import { COLUNAS_MEMBRO } from '@/lib/membros'
 import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check, Trash2, Pencil } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { liquidoEntrada, comTaxaSaida } from '@/lib/taxas'
@@ -133,7 +134,7 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
   const fetchDados = useCallback(async () => {
     setLoading(true)
     const [{ data: m }, { data: r }] = await Promise.all([
-      supabase.from('membros').select('*').order('nome'),
+      supabase.from('membros').select(COLUNAS_MEMBRO).order('nome'),
       supabase.from('mensalidades').select('*').eq('mes', mes).eq('ano', ano),
     ])
     const novoMapa: Record<string, { id?: string; status: StatusMens }> = {}
@@ -300,7 +301,7 @@ function TabAnuidades({ ano, registrar, onMudou }: { ano: number; registrar: (fn
   const fetchDados = useCallback(async () => {
     setLoading(true)
     const [{ data: m }, { data: r }] = await Promise.all([
-      supabase.from('membros').select('*').order('nome'),
+      supabase.from('membros').select(COLUNAS_MEMBRO).order('nome'),
       supabase.from('anuidades').select('*').eq('ano', ano),
     ])
     const mp: Record<string, { id?: string; status: string }> = {}
@@ -968,7 +969,7 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
       supabase.from('pagamentos_eventos').select('*').gte('data', `${ano}-${m}-01`).lte('data', ultimoDiaMes(ano, mes)).order('data'),
       // listas de pedidos e inscrições aparecem sempre (não são de um mês específico)
       supabase.from('pagamentos_eventos').select('*').in('tipo', ['lista', 'inscricao']).order('created_at', { ascending: false }),
-      supabase.from('membros').select('*').order('nome'),
+      supabase.from('membros').select(COLUNAS_MEMBRO).order('nome'),
     ])
     // junta sem duplicar
     const mapaEv = new Map<string, any>()
@@ -1289,7 +1290,7 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
     let dados: DadosPendencias
     try { dados = await carregarDadosPendencias() }
     catch { alert('Não foi possível carregar as pendências.'); setLoading(false); return }
-    const { data: ms } = await supabase.from('membros').select('*').order('nome')
+    const { data: ms } = await supabase.from('membros').select(COLUNAS_MEMBRO).order('nome')
     const nomeDe = (id: string) => (ms ?? []).find(m => m.id === id)?.nome ?? 'Membro'
 
     const mapa: Record<string, Pendencia[]> = {}
