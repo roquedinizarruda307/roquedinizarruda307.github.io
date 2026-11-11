@@ -9,6 +9,7 @@ const LABELS: Record<string, string> = {
   '/tesouraria/saidas':     'Saídas',
   '/tesouraria/membros':    'Membros',
   '/tesouraria/pagamentos': 'Pagamentos',
+  '/tesouraria/indicadores': 'Indicadores',
   '/tesouraria/escrivao':   'Escrivão',
   '/tesouraria/ajustes':    'Ajustes',
   '/tesouraria/senha':      'Minha senha',
@@ -19,6 +20,7 @@ export default function TopBar() {
   const label = LABELS[pathname] ??
     LABELS[Object.keys(LABELS).find(k => k !== '/tesouraria' && pathname.startsWith(k)) ?? '/tesouraria'] ?? 'Início'
 
+  // no celular, pl-[76px] deixa espaço para o botão fixo do menu (Sidebar)
   return (
     <div className="flex items-center justify-between min-h-[76px] pl-[76px] pr-4 md:min-h-0 md:px-8 py-4 bg-white" style={{ borderBottom: '1px solid #f0f0f0' }}>
       <div>

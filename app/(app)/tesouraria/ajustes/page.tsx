@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { Wallet, Check, Users, Trash2 } from 'lucide-react'
 import { usePapel } from '@/components/PapelContext'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
+import { hojeLocal } from '@/lib/datas'
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -48,18 +49,26 @@ export default function AjustesPage() {
     setPendentes(todos.filter(p => !p.aprovado))
   }
 
+  const nomeNivel = (v: string) => NIVEIS.find(n => n.v === v)?.label ?? v
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
   async function aprovar(email: string, comoPapel: 'admin' | 'escrivao') {
+    if (!confirm(`Aprovar ${email} como ${nomeNivel(comoPapel)}?`)) return
     await supabase.from('perfis').update({ aprovado: true, papel: comoPapel }).eq('email', email)
     carregarPerfis()
   }
 
+  // Recusar apaga o perfil: sem perfil = sem acesso (o AuthGuard nega por padrão).
   async function recusar(email: string) {
+    if (!confirm(`Recusar o acesso de ${email}?`)) return
     await supabase.from('perfis').delete().eq('email', email)
     carregarPerfis()
   }
 
   async function mudarNivel(email: string, nivel: string) {
     if (email === meuEmail) { alert('Você não pode mudar o seu próprio nível.'); return }
+    if (!NIVEIS.some(n => n.v === nivel)) return
+    if (!confirm(`Mudar ${email} para ${nomeNivel(nivel)}?${nivel === 'dono' ? ' Ela terá acesso total, inclusive Ajustes.' : ''}`)) return
     await supabase.from('perfis').update({ papel: nivel }).eq('email', email)
     carregarPerfis()
   }
@@ -68,6 +77,13 @@ export default function AjustesPage() {
     e.preventDefault()
     const email = novoEmail.trim().toLowerCase()
     if (!email) return
+    if (!EMAIL_RE.test(email) || email.length > 254) { alert('Digite um e-mail válido.'); return }
+    if (!NIVEIS.some(n => n.v === novoNivel)) return
+    const existente = perfis.find(p => p.email === email)
+    const aviso = existente
+      ? `${email} já tem acesso como ${nomeNivel(existente.papel)}. Mudar para ${nomeNivel(novoNivel)}?`
+      : `Liberar ${email} como ${nomeNivel(novoNivel)}?${novoNivel === 'dono' ? ' Ela terá acesso total, inclusive Ajustes.' : ''}`
+    if (!confirm(aviso)) return
     await supabase.from('perfis').upsert({ email, papel: novoNivel, aprovado: true }, { onConflict: 'email' })
     setNovoEmail(''); setNovoNivel('escrivao'); carregarPerfis()
   }
@@ -86,12 +102,13 @@ export default function AjustesPage() {
     if (isNaN(valorAlvo)) return
     const diff = +(valorAlvo - saldo).toFixed(2)
     if (diff === 0) return
+    if (!confirm(`Lançar um ajuste de ${fmt(Math.abs(diff))} (${diff > 0 ? 'entrada' : 'saída'}) para o saldo ficar ${fmt(valorAlvo)}?`)) return
 
     setSalvando(true)
     await supabase.from('transacoes').insert([{
       tipo: diff > 0 ? 'entrada' : 'saida',
       valor: Math.abs(diff),
-      data: new Date().toISOString().slice(0, 10),
+      data: hojeLocal(),
       categoria: 'Ajuste de caixa',
       descricao: `Calibragem manual do saldo para ${fmt(valorAlvo)}`,
     }])

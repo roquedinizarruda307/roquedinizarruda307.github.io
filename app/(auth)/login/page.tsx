@@ -5,16 +5,19 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import { MinimalistHero } from '@/components/ui/minimalist-hero'
 import { asset } from '@/lib/asset'
-import { createRecoveryClient } from '@/lib/supabase-browser'
+import { pedirLinkRecuperacao } from '@/lib/recuperar-senha'
 
 export default function LoginPage() {
-  const [tab, setTab] = useState<'login' | 'signup' | 'esqueci'>('login')
+  const [tab, setTab] = useState<'login' | 'signup'>('login')
   const [phase, setPhase] = useState<'hero' | 'splash' | 'form'>('hero')
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [nome, setNome] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
+  const [esqueci, setEsqueci] = useState(false)
+  const [avisoReset, setAvisoReset] = useState('')
+  const [cooldown, setCooldown] = useState(0)
   const router = useRouter()
   const supabase = createClient()
   const configured = isSupabaseConfigured()
@@ -25,6 +28,31 @@ export default function LoginPage() {
       if (session) router.replace('/tesouraria')
     })
   }, [])
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [cooldown])
+
+  function abrirEsqueci(aberto: boolean) {
+    setEsqueci(aberto); setErro(''); setAvisoReset('')
+  }
+
+  async function handleEsqueci(e: React.FormEvent) {
+    e.preventDefault()
+    if (loading || cooldown > 0) return
+    setLoading(true); setErro(''); setAvisoReset('')
+    const r = await pedirLinkRecuperacao(email)
+    setLoading(false)
+    if (r.ok) {
+      setAvisoReset('Se o e-mail estiver cadastrado, enviamos um link para criar uma nova senha. Confira a caixa de entrada e o spam.')
+      setCooldown(60)
+    } else {
+      setErro(r.erro)
+      if (r.limite) setCooldown(60)
+    }
+  }
 
   function startFlow() {
     setPhase('splash')
@@ -40,20 +68,6 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: senha })
     if (error) { setErro('E-mail ou senha incorretos.'); setLoading(false); return }
     router.replace('/tesouraria')
-  }
-
-  async function handleEsqueci(e: React.FormEvent) {
-    e.preventDefault()
-    if (!configured) { setErro('Configure o Supabase no .env.local primeiro.'); return }
-    const alvo = email.trim().toLowerCase()
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(alvo)) { setErro('Digite um e-mail válido.'); return }
-    setLoading(true)
-    setErro('')
-    const base = window.location.origin + (process.env.NEXT_PUBLIC_BASE_PATH || '')
-    // resposta neutra sempre: não revela se o e-mail tem conta
-    await createRecoveryClient().auth.resetPasswordForEmail(alvo, { redirectTo: `${base}/redefinir-senha/` })
-    setErro('Se o e-mail estiver cadastrado, você vai receber um link para criar uma nova senha.')
-    setLoading(false)
   }
 
   async function handleSignup(e: React.FormEvent) {
@@ -171,46 +185,71 @@ export default function LoginPage() {
                   <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', letterSpacing:'.18em', textTransform:'uppercase', marginTop:3 }}>Capítulo Nº 307</div>
                 </div>
 
-                {/* Tabs minimalistas */}
-                <div style={{ display:'flex', gap:24, marginBottom:26, borderBottom:'1px solid rgba(255,255,255,.08)' }}>
-                  {(['login','signup'] as const).map(t => (
-                    <button key={t} onClick={() => { setTab(t); setErro('') }}
-                      style={{ background:'none', border:'none', borderBottom: tab===t ? '2px solid #c0392b' : '2px solid transparent', padding:'0 0 12px', marginBottom:-1, fontFamily:"'DM Sans',sans-serif", fontSize:14, fontWeight:600, cursor:'pointer', color: tab===t ? '#fff' : 'rgba(255,255,255,.35)', transition:'color .2s' }}>
-                      {t === 'login' ? 'Entrar' : 'Criar conta'}
-                    </button>
-                  ))}
-                </div>
-
-                <form onSubmit={tab === 'login' ? handleLogin : tab === 'esqueci' ? handleEsqueci : handleSignup}>
-                  {tab === 'signup' && (
-                    <div style={{ marginBottom:16 }}>
-                      <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>Nome completo</label>
-                      <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Seu nome" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:14, color:'#faf5f5', outline:'none' }} />
+                {esqueci ? (
+                  <>
+                    <div style={{ marginBottom:22 }}>
+                      <div style={{ fontSize:15, fontWeight:700, color:'#fff' }}>Recuperar senha</div>
+                      <p style={{ fontSize:12.5, color:'rgba(255,255,255,.45)', marginTop:6, lineHeight:1.5 }}>Digite o e-mail da sua conta. Vamos enviar um link para você criar uma nova senha.</p>
                     </div>
-                  )}
-                  <div style={{ marginBottom:16 }}>
-                    <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>E-mail</label>
-                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:14, color:'#faf5f5', outline:'none' }} />
-                  </div>
-                  {tab !== 'esqueci' && <div style={{ marginBottom:18 }}>
-                    <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>Senha</label>
-                    <input type="password" value={senha} onChange={e => setSenha(e.target.value)} placeholder="••••••••" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:14, color:'#faf5f5', outline:'none' }} />
-                  </div>}
+                    <form onSubmit={handleEsqueci} noValidate>
+                      <div style={{ marginBottom:18 }}>
+                        <label htmlFor="email-reset" style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>E-mail</label>
+                        <input id="email-reset" type="email" autoComplete="email" inputMode="email" maxLength={254} value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:16, color:'#faf5f5', outline:'none' }} />
+                      </div>
+                      {erro && <p role="alert" style={{ fontSize:12, color:'#fca5a5', marginBottom:12 }}>{erro}</p>}
+                      {avisoReset && <p role="status" style={{ fontSize:12, color:'#86efac', marginBottom:12, lineHeight:1.5 }}>{avisoReset}</p>}
+                      <button type="submit" disabled={loading || cooldown > 0} style={{ width:'100%', background:'#c0392b', color:'#fff', border:'none', borderRadius:10, padding:14, fontFamily:"'DM Sans',sans-serif", fontSize:14.5, fontWeight:700, cursor: (loading || cooldown > 0) ? 'not-allowed' : 'pointer', opacity: (loading || cooldown > 0) ? .7 : 1 }}>
+                        {loading ? 'Enviando...' : cooldown > 0 ? `Reenviar em ${cooldown}s` : 'Enviar link'}
+                      </button>
+                    </form>
+                    <div style={{ marginTop:18, fontSize:11.5, color:'rgba(255,255,255,.25)' }}>
+                      <button type="button" onClick={() => abrirEsqueci(false)} style={{ background:'none', border:'none', padding:0, font:'inherit', color:'rgba(220,100,100,.7)', cursor:'pointer' }}>← Voltar para o login</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Tabs minimalistas */}
+                    <div style={{ display:'flex', gap:24, marginBottom:26, borderBottom:'1px solid rgba(255,255,255,.08)' }}>
+                      {(['login','signup'] as const).map(t => (
+                        <button key={t} onClick={() => { setTab(t); setErro('') }}
+                          style={{ background:'none', border:'none', borderBottom: tab===t ? '2px solid #c0392b' : '2px solid transparent', padding:'0 0 12px', marginBottom:-1, fontFamily:"'DM Sans',sans-serif", fontSize:14, fontWeight:600, cursor:'pointer', color: tab===t ? '#fff' : 'rgba(255,255,255,.35)', transition:'color .2s' }}>
+                          {t === 'login' ? 'Entrar' : 'Criar conta'}
+                        </button>
+                      ))}
+                    </div>
 
-                  {erro && (
-                    <p style={{ fontSize:12, color: (erro.includes('Conta criada') || erro.startsWith('Se o e-mail')) ? '#86efac' : '#fca5a5', marginBottom:12 }}>{erro}</p>
-                  )}
+                    <form onSubmit={tab === 'login' ? handleLogin : handleSignup}>
+                      {tab === 'signup' && (
+                        <div style={{ marginBottom:16 }}>
+                          <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>Nome completo</label>
+                          <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Seu nome" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:14, color:'#faf5f5', outline:'none' }} />
+                        </div>
+                      )}
+                      <div style={{ marginBottom:16 }}>
+                        <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>E-mail</label>
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:14, color:'#faf5f5', outline:'none' }} />
+                      </div>
+                      <div style={{ marginBottom:18 }}>
+                        <label style={{ display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.35)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:7 }}>Senha</label>
+                        <input type="password" value={senha} onChange={e => setSenha(e.target.value)} placeholder="••••••••" required style={{ width:'100%', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', borderRadius:10, padding:'13px 15px', fontFamily:"'DM Sans',sans-serif", fontSize:14, color:'#faf5f5', outline:'none' }} />
+                      </div>
 
-                  <button type="submit" disabled={loading} style={{ width:'100%', background:'#c0392b', color:'#fff', border:'none', borderRadius:10, padding:14, fontFamily:"'DM Sans',sans-serif", fontSize:14.5, fontWeight:700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, transition:'background .2s' }}
-                    onMouseEnter={e => !loading && ((e.currentTarget as HTMLElement).style.background='#a93226')}
-                    onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background='#c0392b')}>
-                    {loading ? 'Aguarde...' : tab === 'login' ? 'Entrar no Sistema' : tab === 'esqueci' ? 'Enviar link' : 'Criar conta'}
-                  </button>
-                </form>
+                      {erro && (
+                        <p style={{ fontSize:12, color: erro.includes('Conta criada') ? '#86efac' : '#fca5a5', marginBottom:12 }}>{erro}</p>
+                      )}
 
-                <div style={{ marginTop:18, fontSize:11.5, color:'rgba(255,255,255,.25)' }}>
-                  Acesso restrito · <button type="button" onClick={() => { setTab(tab === 'esqueci' ? 'login' : 'esqueci'); setErro('') }} style={{ background:'none', border:'none', padding:0, font:'inherit', color:'rgba(220,100,100,.7)', cursor:'pointer', textDecoration:'underline' }}>{tab === 'esqueci' ? 'Voltar para o login' : 'Esqueci minha senha'}</button>
-                </div>
+                      <button type="submit" disabled={loading} style={{ width:'100%', background:'#c0392b', color:'#fff', border:'none', borderRadius:10, padding:14, fontFamily:"'DM Sans',sans-serif", fontSize:14.5, fontWeight:700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, transition:'background .2s' }}
+                        onMouseEnter={e => !loading && ((e.currentTarget as HTMLElement).style.background='#a93226')}
+                        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background='#c0392b')}>
+                        {loading ? 'Aguarde...' : tab === 'login' ? 'Entrar no Sistema' : 'Criar conta'}
+                      </button>
+                    </form>
+
+                    <div style={{ marginTop:18, fontSize:11.5, color:'rgba(255,255,255,.25)' }}>
+                      Acesso restrito · <button type="button" onClick={() => abrirEsqueci(true)} style={{ background:'none', border:'none', padding:0, font:'inherit', color:'rgba(220,100,100,.7)', cursor:'pointer' }}>Esqueci minha senha</button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -1,3 +1,11 @@
+-- ============================================================================
+-- ATENÇÃO (integração de 10/11/2026): NÃO REAPLICAR SEM REVISÃO.
+-- A migração supabase/migrations/20261110_rls_seguranca.sql JÁ FOI APLICADA no
+-- banco e pode sobrepor/conflitar com este arquivo (políticas RLS, perfis,
+-- triggers). Antes de rodar, o dev-seguranca deve comparar os dois e o CEO
+-- (Humberto) precisa aprovar.
+-- ============================================================================
+
 -- NÃO EXECUTADO. Rodar no Supabase > SQL Editor só com OK do Humberto.
 -- Garante no banco que cada mensalidade tenha no máximo UMA entrada própria no caixa
 -- (o site já evita, mas isto impede duplicação por clique duplo/duas abas abertas).

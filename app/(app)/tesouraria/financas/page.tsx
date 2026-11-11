@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase, type Transacao } from '@/lib/supabase'
 import { Plus, TrendingUp, TrendingDown, DollarSign } from 'lucide-react'
+import { paraISOData } from '@/lib/datas'
 
 const categorias = {
   entrada: ['Mensalidade', 'Doação', 'Evento', 'Outros'],
@@ -18,7 +19,7 @@ export default function FinancasPage() {
     tipo: 'entrada' as 'entrada' | 'saida',
     descricao: '',
     valor: '',
-    data: new Date().toISOString().split('T')[0],
+    data: paraISOData(new Date()),
     categoria: 'Outros',
   })
 
@@ -36,7 +37,7 @@ export default function FinancasPage() {
   async function salvarTransacao(e: React.FormEvent) {
     e.preventDefault()
     await supabase.from('transacoes').insert([{ ...form, valor: parseFloat(form.valor) }])
-    setForm({ tipo: 'entrada', descricao: '', valor: '', data: new Date().toISOString().split('T')[0], categoria: 'Outros' })
+    setForm({ tipo: 'entrada', descricao: '', valor: '', data: paraISOData(new Date()), categoria: 'Outros' })
     setShowForm(false)
     fetchTransacoes()
   }

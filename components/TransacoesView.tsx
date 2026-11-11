@@ -5,6 +5,7 @@ import { urlSegura } from '@/lib/url'
 import { supabase } from '@/lib/supabase'
 import { ChevronDown, FileSpreadsheet, Plus, X, Pencil, Trash2 } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
+import { paraISOData } from '@/lib/datas'
 import { liquidoEntrada, brutoEntrada, comTaxaSaida, semTaxaSaida } from '@/lib/taxas'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -25,7 +26,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
-  const [form, setForm] = useState({ descricao: '', origem_destino: '', categoria: '', valor: '', data: now.toISOString().split('T')[0] })
+  const [form, setForm] = useState({ descricao: '', origem_destino: '', categoria: '', valor: '', data: paraISOData(now) })
   const anos = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i)
   const isE  = tipo === 'entrada'
   const cor  = isE ? '#16a34a' : '#c0392b'
@@ -48,7 +49,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
   }
 
   function resetForm() {
-    setForm({ descricao: '', origem_destino: '', categoria: '', valor: '', data: now.toISOString().split('T')[0] })
+    setForm({ descricao: '', origem_destino: '', categoria: '', valor: '', data: paraISOData(now) })
     setEditId(null)
   }
 
@@ -78,7 +79,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
       descricao: r.descricao ?? '', origem_destino: r.origem_destino ?? '',
       // o formulário mostra o valor sem a taxa (ela é reaplicada ao salvar)
       categoria: r.categoria ?? '', valor: r.valor == null ? '' : (+(r.valor_bruto ?? (isE ? brutoEntrada(+r.valor) : semTaxaSaida(+r.valor)))).toFixed(2),
-      data: (r.data ?? now.toISOString().split('T')[0]).slice(0, 10),
+      data: (r.data ?? paraISOData(now)).slice(0, 10),
     })
     setShowForm(true)
   }
@@ -258,7 +259,7 @@ export default function TransacoesView({ tipo }: { tipo: 'entrada' | 'saida' }) 
             <p className="text-sm text-gray-400">{r.origem_destino || '—'}</p>
             <div>
               {urlSegura(r.recibo_url)
-                ? <a href={urlSegura(r.recibo_url)!} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: cor }}>Ver</a>
+                ? <a href={urlSegura(r.recibo_url)!} target="_blank" rel="noopener noreferrer" className="text-xs underline" style={{ color: cor }}>Ver</a>
                 : <span className="text-sm text-gray-300">—</span>}
             </div>
             <p className="text-sm font-semibold" style={{ color: cor }}>

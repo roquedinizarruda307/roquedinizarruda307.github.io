@@ -5,11 +5,18 @@ import { supabase, type Membro } from '@/lib/supabase'
 import { Plus, FileSpreadsheet, X, ChevronDown, Ticket, Check, Trash2, Pencil } from 'lucide-react'
 import { exportarExcel } from '@/lib/excel'
 import { liquidoEntrada, comTaxaSaida } from '@/lib/taxas'
-import { ehMesCobrado, mesCobradoMaisProximo, pagaMensalidade, entrouAteAno, aparecaNoMes, ehPendencia, filtroEmAberto } from '@/lib/mensalidades'
+import { ehMesCobrado, mesCobradoMaisProximo, pagaMensalidade, entrouAteAno, aparecaNoMes } from '@/lib/mensalidades'
+import { hojeLocal, ultimoDiaMes } from '@/lib/datas'
+import { carregarDadosPendencias, listarPendencias, totalMensalidadesMes, anuidadesEmAberto, eventosEmAberto, valorParticipacao, type DadosPendencias, type MensP, type EvP, type PartP, type PedP } from '@/lib/pendencias'
 
 const MESES_C = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 const ANO_ATUAL = new Date().getFullYear()
-const ANOS = [ANO_ATUAL, ANO_ATUAL + 1, ANO_ATUAL + 2]
+const ANO_MINIMO = 2026   // primeiro ano do sistema (usado se ainda não houver dados)
+// Lista do primeiro ano com dados até o ano que vem
+const anosDe = (primeiro: number) => {
+  const ini = Math.min(primeiro, ANO_ATUAL)
+  return Array.from({ length: ANO_ATUAL + 1 - ini + 1 }, (_, i) => ini + i)
+}
 
 type StatusMens = 'pago' | 'isento' | 'nao_pago'
 const inp = "w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-white focus:border-gray-400 transition-colors"
@@ -37,7 +44,7 @@ async function pagarPedido(pedidoId: string, tx: TxPedido): Promise<boolean> {
   if (e1) { alert('Não foi possível salvar o pagamento. Nada foi lançado no caixa.'); return false }
   const { data: nova, error: e2 } = await supabase.from('transacoes').insert([{
     tipo: 'entrada', valor: tx.valor, ...(tx.valor_bruto !== undefined ? { valor_bruto: tx.valor_bruto } : {}),
-    data: new Date().toISOString().slice(0, 10), categoria: 'Evento', descricao: tx.descricao,
+    data: hojeLocal(), categoria: 'Evento', descricao: tx.descricao,
   }]).select('id').single()
   if (e2 || !nova) {
     await supabase.from('evento_pedidos').update({ pago: false }).eq('id', pedidoId)
@@ -67,6 +74,51 @@ async function despagarPedido(pedidoId: string): Promise<boolean> {
   }
   return true
 }
+
+// ─── Participante de evento: pago / não pago com o caixa ──────────────────────
+// Mesmo comportamento dos pedidos: marcar pago lança a entrada no caixa; desmarcar estorna.
+// Vínculo pela coluna evento_participantes.transacao_id. Se a coluna ainda não existir no banco,
+// a entrada é localizada por membro + categoria + descrição.
+type TxPart = { participanteId: string; membroId: string | null; valor: number; descricao: string; transacaoId?: string | null }
+
+async function pagarParticipante(tx: TxPart): Promise<string | null | false> {
+  const { data: tr, error } = await supabase.from('transacoes').insert([{
+    tipo: 'entrada', valor: liquidoEntrada(tx.valor), valor_bruto: tx.valor, data: hojeLocal(),
+    categoria: 'Evento', descricao: tx.descricao, membro_id: tx.membroId,
+  }]).select('id').single()
+  if (error || !tr) { alert('Não foi possível lançar no caixa. O participante continua como não pago.'); return false }
+  const { error: e2 } = await supabase.from('evento_participantes').update({ pago: true, transacao_id: tr.id }).eq('id', tx.participanteId)
+  if (e2) {
+    // coluna transacao_id ainda não existe: grava só o "pago"
+    const { error: e3 } = await supabase.from('evento_participantes').update({ pago: true }).eq('id', tx.participanteId)
+    if (e3) {
+      await supabase.from('transacoes').delete().eq('id', tr.id)
+      alert('Não foi possível salvar o pagamento. Nada foi lançado no caixa.'); return false
+    }
+    return null
+  }
+  return tr.id
+}
+
+async function despagarParticipante(tx: TxPart): Promise<boolean> {
+  let trId = tx.transacaoId ?? null
+  if (!trId && tx.membroId) {
+    const { data: achada } = await supabase.from('transacoes').select('id')
+      .eq('membro_id', tx.membroId).eq('categoria', 'Evento').eq('tipo', 'entrada').eq('descricao', tx.descricao)
+      .order('created_at', { ascending: false }).limit(1)
+    trId = achada?.[0]?.id ?? null
+  }
+  const { error: e1 } = await supabase.from('evento_participantes').update({ pago: false, transacao_id: null }).eq('id', tx.participanteId)
+  if (e1) {
+    const { error: e2 } = await supabase.from('evento_participantes').update({ pago: false }).eq('id', tx.participanteId)
+    if (e2) { alert('Não foi possível salvar. O caixa não foi alterado.'); return false }
+  }
+  if (trId) await supabase.from('transacoes').delete().eq('id', trId)
+  return true
+}
+
+const descricaoParticipante = (ev: { nome: string; tipo?: string | null }, nomeMembro: string, qtd: number) =>
+  `${ev.nome} — ${nomeMembro}${ev.tipo === 'ingresso' ? ` (${qtd} ingresso${qtd !== 1 ? 's' : ''})` : ''}`
 
 // ─── Tab: Mensalidades ────────────────────────────────────────────────────────
 function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void; onMudou: () => void }) {
@@ -126,7 +178,7 @@ function TabMensalidades({ mes, ano, registrar, onMudou }: { mes: number; ano: n
     const { data: existe } = await supabase.from('transacoes')
       .select('id').eq('mensalidade_id', mensalidadeId).limit(1)
     if (existe && existe.length) return
-    const hoje = new Date().toISOString().slice(0, 10)
+    const hoje = hojeLocal()
     await supabase.from('transacoes').insert([{
       tipo: 'entrada',
       valor: liquidoEntrada(20),   // conta no saldo já sem a taxa
@@ -711,7 +763,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
     const ehSaida = dTipo === 'saida'
     await supabase.from('transacoes').insert([{
       tipo: dTipo, valor: ehSaida ? comTaxaSaida(+dValor) : +dValor, valor_bruto: +dValor,
-      data: new Date().toISOString().slice(0, 10),
+      data: hojeLocal(),
       categoria: 'Evento', descricao: `${ev.nome} — ${dDesc.trim()}`,
     }])
     setDDesc(''); setDValor(''); fetchTudo(); onMudou()
@@ -893,7 +945,7 @@ function DashboardInscricoes({ ev, onMudou, onExcluir }: { ev: any; onMudou: () 
 }
 
 // ─── Tab: Eventos ─────────────────────────────────────────────────────────────
-type Participante = { id: string; evento_id: string; membro_id: string; qtd: number; pago: boolean; ingresso_retirado: boolean }
+type Participante = { id: string; evento_id: string; membro_id: string; qtd: number; pago: boolean; ingresso_retirado: boolean; transacao_id?: string | null }
 
 function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number; registrar: (fn: () => string[][]) => void; onMudou: () => void }) {
   const [eventos, setEventos] = useState<any[]>([])
@@ -904,13 +956,16 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
   const [expandido, setExpandido] = useState<string | null>(null)
   const [addSel, setAddSel] = useState<Record<string, string>>({})
   const [form, setForm] = useState({ nome: '', data: `${ano}-${String(mes).padStart(2,'0')}-01`, valor: '', descricao: '', tipo: 'simples', qtd_ingressos: '1' })
+  // participantes com gravação de pagamento em andamento (trava clique duplo)
+  const [salvandoPago, setSalvandoPago] = useState<Set<string>>(new Set())
+  const travaPago = useRef<Set<string>>(new Set())
 
   const fetchDados = useCallback(async () => {
     setLoading(true)
     const m = String(mes).padStart(2,'0')
     const [{ data: evsMes }, { data: evsLista }, { data: ms }] = await Promise.all([
       // eventos do mês (simples/ingresso) + listas do mês
-      supabase.from('pagamentos_eventos').select('*').gte('data', `${ano}-${m}-01`).lte('data', `${ano}-${m}-31`).order('data'),
+      supabase.from('pagamentos_eventos').select('*').gte('data', `${ano}-${m}-01`).lte('data', ultimoDiaMes(ano, mes)).order('data'),
       // listas de pedidos e inscrições aparecem sempre (não são de um mês específico)
       supabase.from('pagamentos_eventos').select('*').in('tipo', ['lista', 'inscricao']).order('created_at', { ascending: false }),
       supabase.from('membros').select('*').order('nome'),
@@ -931,7 +986,7 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
 
   useEffect(() => { fetchDados() }, [fetchDados])
 
-  const valorDevido = (ev: any, p: Participante) => ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor
+  const valorDevido = (ev: any, p: Participante) => valorParticipacao(ev, p)
   const partsDe = (evId: string) => parts.filter(p => p.evento_id === evId)
 
   useEffect(() => {
@@ -968,16 +1023,51 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
   }
 
   async function togglePart(p: Participante, campo: 'pago' | 'ingresso_retirado') {
+    if (campo === 'pago') return togglePagoPart(p)
     const novo = !p[campo]
     setParts(prev => prev.map(x => x.id === p.id ? { ...x, [campo]: novo } : x))
     await supabase.from('evento_participantes').update({ [campo]: novo }).eq('id', p.id)
-    if (campo === 'pago') onMudou()
+  }
+
+  // Pagamento de participante: lança/estorna a entrada no caixa, igual aos pedidos.
+  async function togglePagoPart(p: Participante) {
+    if (travaPago.current.has(p.id)) return
+    const ev = eventos.find(e => e.id === p.evento_id)
+    if (!ev) return
+    travaPago.current.add(p.id)
+    setSalvandoPago(new Set(travaPago.current))
+    const novo = !p.pago
+    setParts(prev => prev.map(x => x.id === p.id ? { ...x, pago: novo } : x))
+    const nomeMembro = membros.find(x => x.id === p.membro_id)?.nome ?? 'Membro'
+    const tx: TxPart = { participanteId: p.id, membroId: p.membro_id, valor: valorDevido(ev, p),
+      descricao: descricaoParticipante(ev, nomeMembro, p.qtd || 1), transacaoId: p.transacao_id }
+    try {
+      if (novo) {
+        const r = await pagarParticipante(tx)
+        if (r === false) setParts(prev => prev.map(x => x.id === p.id ? { ...x, pago: p.pago } : x))
+        else setParts(prev => prev.map(x => x.id === p.id ? { ...x, transacao_id: r } : x))
+      } else {
+        const ok = await despagarParticipante(tx)
+        setParts(prev => prev.map(x => x.id === p.id ? (ok ? { ...x, transacao_id: null } : { ...x, pago: p.pago }) : x))
+      }
+    } finally {
+      travaPago.current.delete(p.id)
+      setSalvandoPago(new Set(travaPago.current))
+    }
+    onMudou()
   }
 
   async function setQtd(p: Participante, qtd: number) {
     if (qtd < 1) return
     setParts(prev => prev.map(x => x.id === p.id ? { ...x, qtd } : x))
     await supabase.from('evento_participantes').update({ qtd }).eq('id', p.id)
+    // se já estava pago, atualiza o valor lançado no caixa (igual aos pedidos)
+    const ev = eventos.find(e => e.id === p.evento_id)
+    if (p.pago && p.transacao_id && ev) {
+      const v = valorDevido(ev, { ...p, qtd })
+      const nomeMembro = membros.find(x => x.id === p.membro_id)?.nome ?? 'Membro'
+      await supabase.from('transacoes').update({ valor: liquidoEntrada(v), valor_bruto: v, descricao: descricaoParticipante(ev, nomeMembro, qtd) }).eq('id', p.transacao_id)
+    }
   }
 
   async function removerPart(p: Participante) {
@@ -1124,10 +1214,10 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
                           </div>
                         )}
                         {/* pago */}
-                        <button onClick={() => togglePart(p, 'pago')}
-                          className="text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg transition-colors"
+                        <button onClick={() => togglePart(p, 'pago')} disabled={salvandoPago.has(p.id)}
+                          className="text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-wait"
                           style={p.pago ? { background: '#f0fdf4', color: '#16a34a' } : { background: '#fef2f2', color: '#dc2626' }}>
-                          {p.pago ? 'Pago' : 'Não pago'}
+                          {salvandoPago.has(p.id) ? '...' : p.pago ? 'Pago' : 'Não pago'}
                         </button>
                         {/* ingresso retirado */}
                         {ev.tipo === 'ingresso' && (
@@ -1172,7 +1262,7 @@ function TabEventos({ mes, ano, registrar, onMudou }: { mes: number; ano: number
 type PendDados =
   | { t: 'mensalidade'; id?: string; mes: number; ano: number }
   | { t: 'anuidade'; id: string }
-  | { t: 'participante'; id: string }
+  | { t: 'participante'; id: string; membroId: string; transacaoId?: string | null; descricao: string }
   | { t: 'pedido'; id: string; descricao: string }
 
 type Pendencia = { key: string; tipo: 'Mensalidade' | 'Anuidade' | 'Evento' | 'Pedido'; ref: string; valor: number; dados: PendDados }
@@ -1195,42 +1285,34 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
   const fetchDados = useCallback(async () => {
     setLoading(true)
 
-    const [{ data: ms }, { data: mens }, { data: anu }, { data: evs }, { data: parts }, { data: peds }] = await Promise.all([
-      supabase.from('membros').select('*').order('nome'),
-      filtroEmAberto(supabase.from('mensalidades').select('id, membro_id, mes, ano, valor, status')).order('ano').order('mes'),
-      supabase.from('anuidades').select('id, membro_id, ano, valor, status').neq('status', 'pago'),
-      supabase.from('pagamentos_eventos').select('id, nome, valor, tipo'),
-      supabase.from('evento_participantes').select('*').eq('pago', false),
-      supabase.from('evento_pedidos').select('*').eq('pago', false).not('membro_id', 'is', null),
-    ])
+    // Mesma regra do Painel, Membros e Indicadores (lib/pendencias)
+    let dados: DadosPendencias
+    try { dados = await carregarDadosPendencias() }
+    catch { alert('Não foi possível carregar as pendências.'); setLoading(false); return }
+    const { data: ms } = await supabase.from('membros').select('*').order('nome')
+    const nomeDe = (id: string) => (ms ?? []).find(m => m.id === id)?.nome ?? 'Membro'
 
     const mapa: Record<string, Pendencia[]> = {}
     const add = (mid: string, p: Pendencia) => { (mapa[mid] = mapa[mid] ?? []).push(p) }
 
-    // Mensalidades: regra única — só linhas lançadas 'nao_pago', fora de jan/jul (lib/mensalidades)
-    for (const r of mens ?? []) {
-      if (!ehPendencia(r)) continue
-      add(r.membro_id, { key: `mens-${r.id}`, tipo: 'Mensalidade', ref: `${MESES_C[r.mes - 1]}/${r.ano}`, valor: +r.valor,
-        dados: { t: 'mensalidade', id: r.id, mes: r.mes, ano: r.ano } })
-    }
-
-    // Anuidades em aberto (qualquer ano)
-    for (const a of anu ?? [])
-      add(a.membro_id, { key: `anu-${a.id}`, tipo: 'Anuidade', ref: String(a.ano), valor: +a.valor, dados: { t: 'anuidade', id: a.id } })
-
-    // Eventos: participações não pagas (qualquer data)
-    for (const p of parts ?? []) {
-      const ev = (evs ?? []).find(e => e.id === p.evento_id)
-      if (ev) add(p.membro_id, { key: `part-${p.id}`, tipo: 'Evento', ref: ev.nome, valor: ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor,
-        dados: { t: 'participante', id: p.id } })
-    }
-
-    // Pedidos de listas (ex.: camisetas) não pagos, vinculados a membros
-    for (const pd of peds ?? []) {
-      const ev = (evs ?? []).find(e => e.id === pd.evento_id)
-      const resumo = resumoItens(pd as Pedido)
-      add(pd.membro_id, { key: `ped-${pd.id}`, tipo: 'Pedido', ref: `${ev?.nome ?? 'Evento'}${resumo ? ` (${resumo})` : ''}`, valor: +pd.valor,
-        dados: { t: 'pedido', id: pd.id, descricao: `${ev?.nome ?? 'Evento'} — ${pd.nome}${resumo ? ` (${resumo})` : ''}` } })
+    for (const [mid, itens] of Object.entries(listarPendencias(dados))) {
+      for (const it of itens) {
+        if (it.tipo === 'mensalidade') {
+          add(mid, { key: `mens-${it.id ?? `${it.ano}-${it.mes}`}`, tipo: 'Mensalidade', ref: `${MESES_C[it.mes - 1]}/${it.ano}`, valor: it.valor,
+            dados: { t: 'mensalidade', id: it.id, mes: it.mes, ano: it.ano } })
+        } else if (it.tipo === 'anuidade' && it.id) {
+          add(mid, { key: `anu-${it.id}`, tipo: 'Anuidade', ref: String(it.ano), valor: it.valor, dados: { t: 'anuidade', id: it.id } })
+        } else if (it.tipo === 'participante' && it.id) {
+          add(mid, { key: `part-${it.id}`, tipo: 'Evento', ref: it.evento.nome ?? 'Evento', valor: it.valor,
+            dados: { t: 'participante', id: it.id, membroId: mid, transacaoId: it.part.transacao_id,
+              descricao: descricaoParticipante({ nome: it.evento.nome ?? 'Evento', tipo: it.evento.tipo }, nomeDe(mid), it.part.qtd || 1) } })
+        } else if (it.tipo === 'pedido' && it.id) {
+          const nomeEv = it.evento?.nome ?? 'Evento'
+          const resumo = resumoItens(it.pedido as unknown as Pedido)
+          add(mid, { key: `ped-${it.id}`, tipo: 'Pedido', ref: `${nomeEv}${resumo ? ` (${resumo})` : ''}`, valor: it.valor,
+            dados: { t: 'pedido', id: it.id, descricao: `${nomeEv} — ${it.pedido.nome ?? ''}${resumo ? ` (${resumo})` : ''}` } })
+        }
+      }
     }
 
     setMembros(ms ?? []); setPorMembro(mapa); setLoading(false)
@@ -1253,7 +1335,7 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
   // Dá baixa numa pendência: mesma lógica das outras abas (marca pago e lança no caixa quando é o caso)
   async function baixar(membro: Membro, p: Pendencia) {
     const agora = new Date().toISOString()
-    const hoje = agora.slice(0, 10)
+    const hoje = hojeLocal()
     const d = p.dados
     if (d.t === 'mensalidade') {
       let id = d.id
@@ -1279,8 +1361,9 @@ function TabPendencias({ registrar, onMudou }: { registrar: (fn: () => string[][
       const { error } = await supabase.from('anuidades').update({ status: 'pago', data_pagamento: agora }).eq('id', d.id)
       if (error) { alert(`Não foi possível dar baixa (anuidade ${p.ref}).`); return false }
     } else if (d.t === 'participante') {
-      const { error } = await supabase.from('evento_participantes').update({ pago: true }).eq('id', d.id)
-      if (error) { alert(`Não foi possível dar baixa (${p.ref}).`); return false }
+      // igual à aba Eventos: marca pago e lança a entrada no caixa
+      const r = await pagarParticipante({ participanteId: d.id, membroId: d.membroId, valor: p.valor, descricao: d.descricao, transacaoId: d.transacaoId })
+      if (r === false) return false
     } else {
       if (!await pagarPedido(d.id, { valor: p.valor, descricao: d.descricao })) return false
     }
@@ -1396,6 +1479,18 @@ export default function PagamentosPage() {
   const [anoSel, setAnoSel] = useState(hoje.getFullYear())
   const [tab, setTab] = useState<'mensalidades' | 'anuidades' | 'eventos' | 'pendencias'>('mensalidades')
   const [resumo, setResumo] = useState({ pendente: 0, anuidade: 0, mensalidades: 0, eventos: 0 })
+  const [anos, setAnos] = useState<number[]>(anosDe(ANO_MINIMO))
+
+  // primeiro ano com dados (mensalidades ou anuidades)
+  useEffect(() => {
+    Promise.all([
+      supabase.from('mensalidades').select('ano').order('ano').limit(1),
+      supabase.from('anuidades').select('ano').order('ano').limit(1),
+    ]).then(([a, b]) => {
+      const cand = [a.data?.[0]?.ano, b.data?.[0]?.ano].filter((x): x is number => typeof x === 'number')
+      setAnos(anosDe(cand.length ? Math.min(...cand) : ANO_MINIMO))
+    })
+  }, [])
 
   // função que gera as linhas do relatório da aba ativa
   const [gerarLinhas, setGerarLinhas] = useState<() => string[][]>(() => () => [])
@@ -1416,35 +1511,26 @@ export default function PagamentosPage() {
   }, [tab, mesSel])
 
   async function fetchResumo() {
-    const m = String(mesSel).padStart(2,'0')
     const [{ data: mens }, { data: anu }, { data: evs }] = await Promise.all([
-      supabase.from('mensalidades').select('membro_id, mes, valor, status').eq('mes', mesSel).eq('ano', anoSel),
-      supabase.from('anuidades').select('membro_id, valor, status').eq('ano', anoSel),
-      supabase.from('pagamentos_eventos').select('id, valor, tipo').gte('data', `${anoSel}-${m}-01`).lte('data', `${anoSel}-${m}-31`),
+      supabase.from('mensalidades').select('membro_id, mes, ano, valor, status').eq('mes', mesSel).eq('ano', anoSel),
+      supabase.from('anuidades').select('membro_id, ano, valor, status').eq('ano', anoSel),
+      supabase.from('pagamentos_eventos').select('id, valor, tipo, data').gte('data', `${anoSel}-${String(mesSel).padStart(2,'0')}-01`).lte('data', ultimoDiaMes(anoSel, mesSel)),
     ])
 
-    // Mensalidades: regra única — só linhas lançadas 'nao_pago' (sem jan/jul). Mês sem lançamento não é dívida.
-    const totalMens = (mens ?? []).filter(ehPendencia).reduce((s, r) => s + +r.valor, 0)
+    // Mesmo critério de todas as telas (lib/pendencias): só linhas 'nao_pago' (sem jan/jul). Mês sem lançamento não é dívida.
+    const totalMens = totalMensalidadesMes((mens ?? []) as MensP[])
+    // Anuidades: tudo que não está pago (pendente + atrasado)
+    const totalAnu = anuidadesEmAberto(anu ?? []).total
 
-    // Anuidades: pendentes (não pagas)
-    const totalAnu = (anu ?? []).filter(r => r.status !== 'pago').reduce((s, r) => s + +r.valor, 0)
-
-    // Eventos: falta receber de participantes (simples/ingresso) + pedidos (lista)
+    // Eventos do mês: falta receber de participantes + pedidos (não usa pagamentos_eventos.status)
     let totalEv = 0
     const evIds = (evs ?? []).map(e => e.id)
     if (evIds.length) {
       const [{ data: parts }, { data: peds }] = await Promise.all([
-        supabase.from('evento_participantes').select('*').in('evento_id', evIds),
-        supabase.from('evento_pedidos').select('valor, pago, evento_id').in('evento_id', evIds),
+        supabase.from('evento_participantes').select('evento_id, membro_id, qtd, pago').in('evento_id', evIds),
+        supabase.from('evento_pedidos').select('evento_id, membro_id, valor, pago').in('evento_id', evIds),
       ])
-      for (const p of parts ?? []) {
-        if (p.pago) continue
-        const ev = (evs ?? []).find(e => e.id === p.evento_id)
-        if (ev) totalEv += ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor
-      }
-      for (const pd of peds ?? []) {
-        if (!pd.pago) totalEv += +pd.valor
-      }
+      totalEv = eventosEmAberto((evs ?? []) as EvP[], (parts ?? []) as PartP[], (peds ?? []) as PedP[]).total
     }
 
     setResumo({ pendente: totalMens + totalAnu + totalEv, anuidade: totalAnu, mensalidades: totalMens, eventos: totalEv })
@@ -1510,7 +1596,7 @@ export default function PagamentosPage() {
         {/* separador */}
         {mostraMeses && <div className="hidden sm:block w-px h-6 bg-gray-200 mx-1" />}
 
-        {mostraAnos && ANOS.map(a => {
+        {mostraAnos && anos.map(a => {
           const active = anoSel === a
           return (
             <button key={a} onClick={() => setAnoSel(a)}

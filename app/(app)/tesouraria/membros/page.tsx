@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, X, AlertCircle, UserCheck, List } from 'lucide-react'
+import { Plus, Search, X, AlertCircle, UserCheck, List, Cake, ArrowRightCircle } from 'lucide-react'
+import { carregarPendencias } from '@/lib/pendencias'
+import { usePapel, ehAdmin } from '@/components/PapelContext'
+import { hojeLocal } from '@/lib/datas'
+import { infoMaioridade, DIAS_AVISO_21 } from '@/lib/maioridade'
 import { ehMesCobrado, filtroEmAberto } from '@/lib/mensalidades'
 import PresencaMembro from '@/components/PresencaMembro'
 import { FREQUENCIA_MINIMA } from '@/lib/escrivao'
@@ -88,6 +92,10 @@ function ModalPendencias({ membro, onClose }: { membro: any; onClose: () => void
 export default function MembrosPage() {
   const [membros, setMembros] = useState<any[]>([])
   const [dividas, setDividas] = useState<Record<string, number>>({})
+  const [transferindo, setTransferindo] = useState<string | null>(null)
+  const { papel, carregando: carregandoPapel } = usePapel()
+  // Só admin/dona transfere para Sênior (escrivão edita Membros, mas não faz a transferência)
+  const podeAdministrar = !carregandoPapel && ehAdmin(papel)
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -102,13 +110,9 @@ export default function MembrosPage() {
   async function fetchTudo() {
     setLoading(true)
     const sem = semestreAtual()
-    const [{ data: m }, { data: mens }, { data: anu }, { data: parts }, { data: peds }, { data: evs }, freqSem] = await Promise.all([
+    const [{ data: m }, pend, freqSem] = await Promise.all([
       supabase.from('membros').select('*').order('nome'),
-      filtroEmAberto(supabase.from('mensalidades').select('membro_id, valor')),
-      supabase.from('anuidades').select('membro_id, valor, status').neq('status', 'pago'),
-      supabase.from('evento_participantes').select('membro_id, qtd, pago, evento_id').eq('pago', false),
-      supabase.from('evento_pedidos').select('membro_id, valor, pago').eq('pago', false),
-      supabase.from('pagamentos_eventos').select('id, valor, tipo'),
+      carregarPendencias().catch(() => null),   // mesma regra do Painel, Pagamentos e Indicadores (lib/pendencias)
       carregarSemestre(sem.ano, sem.semestre),   // reuniões + presenças do semestre: uma consulta para a lista toda
     ])
     setMembros(m ?? [])
@@ -120,22 +124,19 @@ export default function MembrosPage() {
     for (const mb of m ?? []) fr[mb.id] = calcularFrequencia(mb, freqSem.reunioes, presPorMembro.get(mb.id) ?? [])
     setFrequencias(fr)
 
-    const d: Record<string, number> = {}
-    const add = (id: string | null, v: number) => { if (id) d[id] = (d[id] ?? 0) + v }
-
-    for (const row of mens ?? []) add(row.membro_id, +row.valor)
-    for (const row of anu ?? []) add(row.membro_id, +row.valor)
-    // participações em eventos (ingresso/simples)
-    const evMap = new Map((evs ?? []).map(e => [e.id, e]))
-    for (const p of parts ?? []) {
-      const ev = evMap.get(p.evento_id)
-      if (ev) add(p.membro_id, ev.tipo === 'ingresso' ? +ev.valor * p.qtd : +ev.valor)
-    }
-    // pedidos de evento vinculados a membro
-    for (const pd of peds ?? []) add(pd.membro_id, +pd.valor)
-
-    setDividas(d)
+    setDividas(pend?.porMembro ?? {})
     setLoading(false)
+  }
+
+  async function transferirSenior(m: { id: string; nome: string }, completou: string) {
+    if (!podeAdministrar || transferindo) return
+    if (!confirm(`Transferir ${m.nome} para Sênior DeMolay?\n\nEle completou 21 anos em ${completou}. O status passará de Ativo para Sênior e ele deixa de gerar mensalidade nova.`)) return
+    setTransferindo(m.id)
+    const { data: alt, error } = await supabase.from('membros').update({ status: 'senior' }).eq('id', m.id).eq('status', 'ativo').select('id')
+    setTransferindo(null)
+    if (error) { alert('Não foi possível transferir: ' + error.message); return }
+    if (!alt?.length) { alert('Nada foi alterado (o membro já não está como Ativo ou sua conta não tem permissão).') }
+    fetchTudo()
   }
 
   function abrirNovo() { setEditando(null); setForm({ nome: '', matricula: '', status: 'ativo' }); setShowForm(true) }
@@ -144,11 +145,14 @@ export default function MembrosPage() {
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
     if (editando) {
-      await supabase.from('membros').update({ nome: form.nome, matricula: form.matricula, status: form.status }).eq('id', editando.id)
+      // .select: sem permissão no banco (RLS) o update não dá erro, só não altera nada — avisa
+      const { data: alt, error } = await supabase.from('membros').update({ nome: form.nome, matricula: form.matricula, status: form.status }).eq('id', editando.id).select('id')
+      if (error || !alt?.length) { alert('Não foi possível salvar. Sua conta pode não ter permissão para editar membros.'); return }
     } else {
-      const { data: novo } = await supabase.from('membros')
-        .insert([{ nome: form.nome, matricula: form.matricula, status: form.status, data_entrada: new Date().toISOString() }])
+      const { data: novo, error } = await supabase.from('membros')
+        .insert([{ nome: form.nome, matricula: form.matricula, status: form.status, data_entrada: hojeLocal() }])
         .select('id').single()
+      if (error || !novo) { alert('Não foi possível cadastrar. Sua conta pode não ter permissão para editar membros.'); return }
       if (novo?.id) {
         // membro novo só é cobrado a partir do mês de entrada (nada retroativo);
         // jan e jul não têm mensalidade
@@ -164,6 +168,11 @@ export default function MembrosPage() {
     setForm({ nome: '', matricula: '', status: 'ativo' })
     fetchTudo()
   }
+
+  const maioridade = Object.fromEntries(membros.map(m => [m.id, infoMaioridade(m)]))
+  const jaCompletaram = membros.filter(m => maioridade[m.id]?.estado === 'completou')
+  const proximos = membros.filter(m => maioridade[m.id]?.estado === 'em_breve')
+    .sort((a, b) => (maioridade[a.id]!.dias - maioridade[b.id]!.dias))
 
   const filtrados = membros.filter(m =>
     m.nome.toLowerCase().includes(busca.toLowerCase()) ||
@@ -233,6 +242,34 @@ export default function MembrosPage() {
         </div>
       )}
 
+      {/* Avisos de maioridade (21 anos) */}
+      {!loading && (jaCompletaram.length > 0 || proximos.length > 0) && (
+        <div className="space-y-3">
+          {jaCompletaram.length > 0 && (
+            <div className="rounded-2xl border px-4 py-3.5" style={{ background: '#fff7ed', borderColor: '#fed7aa' }}>
+              <p className="text-sm font-bold flex items-center gap-2" style={{ color: '#9a3412' }}>
+                <Cake size={15} /> {jaCompletaram.length === 1 ? '1 membro ativo já completou' : `${jaCompletaram.length} membros ativos já completaram`} 21 anos — transferir para Sênior
+              </p>
+              <p className="text-xs mt-1" style={{ color: '#9a3412' }}>
+                {jaCompletaram.map(m => `${m.nome} (${maioridade[m.id]!.dataBR})`).join(' · ')}
+              </p>
+            </div>
+          )}
+          {proximos.length > 0 && (
+            <div className="rounded-2xl border px-4 py-3.5" style={{ background: '#eff6ff', borderColor: '#bfdbfe' }}>
+              <p className="text-sm font-bold flex items-center gap-2" style={{ color: '#1e40af' }}>
+                <Cake size={15} /> Completam 21 anos nos próximos {DIAS_AVISO_21} dias
+              </p>
+              <ul className="text-xs mt-1 space-y-0.5" style={{ color: '#1e40af' }}>
+                {proximos.map(m => (
+                  <li key={m.id}>{m.nome} — {maioridade[m.id]!.dataBR} (em {maioridade[m.id]!.dias} dia{maioridade[m.id]!.dias !== 1 ? 's' : ''})</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Busca */}
       <div className="relative">
         <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -253,6 +290,7 @@ export default function MembrosPage() {
             const cat = CATEGORIA[m.status as Status] ?? CATEGORIA.ativo
             const divida = dividas[m.id] ?? 0
             const fq = frequencias[m.id]
+            const mai = maioridade[m.id]
             const fqBaixa = fq?.pct !== null && fq?.pct !== undefined && fq.pct < FREQUENCIA_MINIMA
             return (
               <div key={m.id} className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col gap-4 hover:shadow-md transition-shadow">
@@ -278,6 +316,27 @@ export default function MembrosPage() {
                     <p className="text-xs text-gray-400 mt-1">{m.matricula || '—'}</p>
                   </div>
                 </div>
+
+                {/* Aviso de maioridade */}
+                {mai?.estado === 'completou' && (
+                  <div className="rounded-xl px-3 py-2.5 space-y-2" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                    <p className="text-xs font-bold flex items-center gap-1.5" style={{ color: '#9a3412' }}>
+                      <Cake size={13} /> Completou 21 anos em {mai.dataBR}
+                    </p>
+                    {podeAdministrar && (
+                      <button onClick={() => transferirSenior(m, mai.dataBR)} disabled={transferindo === m.id}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold uppercase tracking-wide text-white disabled:opacity-60"
+                        style={{ background: '#1d4ed8' }}>
+                        <ArrowRightCircle size={13} /> {transferindo === m.id ? 'Transferindo...' : 'Transferir para Sênior DeMolay'}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {mai?.estado === 'em_breve' && (
+                  <p className="text-xs font-semibold rounded-xl px-3 py-2 flex items-center gap-1.5" style={{ background: '#eff6ff', color: '#1e40af' }}>
+                    <Cake size={13} /> Completa 21 anos em {mai.dataBR}
+                  </p>
+                )}
 
                 {/* Linha divisória */}
                 <div style={{ borderTop: '1px solid #f3f3f3' }} />

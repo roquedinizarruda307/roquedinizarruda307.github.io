@@ -1,3 +1,11 @@
+-- ============================================================================
+-- ATENÇÃO (integração de 10/11/2026): NÃO REAPLICAR SEM REVISÃO.
+-- A migração supabase/migrations/20261110_rls_seguranca.sql JÁ FOI APLICADA no
+-- banco e pode sobrepor/conflitar com este arquivo (políticas RLS, perfis,
+-- triggers). Antes de rodar, o dev-seguranca deve comparar os dois e o CEO
+-- (Humberto) precisa aprovar.
+-- ============================================================================
+
 -- ════════════════════════════════════════════════════════════════════════════
 --  SEGURANÇA (RLS) — Capítulo Roque Diniz Arruda 307 — 2026-11-08
 --  NÃO EXECUTADO. Rodar no Supabase > SQL Editor só com OK do Humberto.
