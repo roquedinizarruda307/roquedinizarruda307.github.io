@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, X, AlertCircle, UserCheck, List, Cake, ArrowRightCircle, ChevronDown } from 'lucide-react'
+import { Plus, Search, X, AlertCircle, UserCheck, List, Cake, ArrowRightCircle, ChevronDown, BadgeCheck, Pencil } from 'lucide-react'
 import { carregarPendencias } from '@/lib/pendencias'
 import { usePapel, ehAdmin } from '@/components/PapelContext'
 import { hojeLocal, hojeDate, parseDataLocal, fmtDataBR } from '@/lib/datas'
-import { COLUNAS_MEMBRO, SITUACOES, infoSituacao, carregarDadosPessoais, juntarDadosPessoais, type Situacao, type MembroLinha } from '@/lib/membros'
+import { COLUNAS_MEMBRO, SITUACOES, infoSituacao, carregarDadosPessoais, juntarDadosPessoais, atualizarDadosOrdem, proximoVencimentoAnuidade, type Situacao, type MembroLinha } from '@/lib/membros'
 import { infoMaioridade, DIAS_AVISO_21 } from '@/lib/maioridade'
 import { ehMesCobrado, filtroEmAberto } from '@/lib/mensalidades'
 import PresencaMembro from '@/components/PresencaMembro'
@@ -135,6 +135,9 @@ export default function MembrosPage() {
   const [editando, setEditando] = useState<any | null>(null)
   const [modal, setModal] = useState<any | null>(null)
   const [form, setForm] = useState({ nome: '', matricula: '', status: 'ativo' as Status })
+  // Dados da Ordem (situação e anuidade): id do membro sendo salvo e o modal de edição
+  const [salvandoOrdem, setSalvandoOrdem] = useState<string | null>(null)
+  const [editOrdem, setEditOrdem] = useState<{ membro: { id: string; nome: string }; situacao: Situacao | ''; vencimento: string; erro: string } | null>(null)
 
   useEffect(() => { fetchTudo() }, [])
 
@@ -180,6 +183,42 @@ export default function MembrosPage() {
     if (error) { alert('Não foi possível transferir: ' + error.message); return }
     if (!alt?.length) { alert('Nada foi alterado (o membro já não está como Ativo ou sua conta não tem permissão).') }
     fetchTudo()
+  }
+
+  async function registrarAnuidadePaga(m: { id: string; nome: string; anuidade_vencimento?: string | null }) {
+    if (!podeAdministrar || salvandoOrdem) return
+    const nova = proximoVencimentoAnuidade(m.anuidade_vencimento, hojeDate())
+    if (!confirm(`Registrar anuidade paga de ${m.nome}?\n\nSituação: Regular\nNovo vencimento da anuidade: ${fmtDataBR(nova)}`)) return
+    setSalvandoOrdem(m.id)
+    try {
+      await atualizarDadosOrdem(m.id, 'regular', nova)
+      await fetchTudo()
+    } catch (e) {
+      alert('Não foi possível registrar a anuidade: ' + (e instanceof Error ? e.message : 'erro desconhecido'))
+    } finally {
+      setSalvandoOrdem(null)
+    }
+  }
+
+  function abrirEdicaoOrdem(m: { id: string; nome: string; situacao?: string | null; anuidade_vencimento?: string | null }) {
+    setEditOrdem({ membro: m, situacao: infoSituacao(m.situacao)?.id ?? '', vencimento: parseDataLocal(m.anuidade_vencimento) ? String(m.anuidade_vencimento).slice(0, 10) : '', erro: '' })
+  }
+
+  async function salvarEdicaoOrdem(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editOrdem || !podeAdministrar || salvandoOrdem) return
+    const { membro, situacao, vencimento } = editOrdem
+    if (vencimento && !parseDataLocal(vencimento)) { setEditOrdem({ ...editOrdem, erro: 'Data de vencimento inválida.' }); return }
+    setSalvandoOrdem(membro.id)
+    try {
+      await atualizarDadosOrdem(membro.id, situacao || null, vencimento || null)
+      setEditOrdem(null)
+      await fetchTudo()
+    } catch (err) {
+      setEditOrdem(atual => atual && { ...atual, erro: err instanceof Error ? err.message : 'Não foi possível salvar.' })
+    } finally {
+      setSalvandoOrdem(null)
+    }
   }
 
   function abrirNovo() { setEditando(null); setForm({ nome: '', matricula: '', status: 'ativo' }); setShowForm(true) }
@@ -300,6 +339,62 @@ export default function MembrosPage() {
                 style={{ background: '#c0392b' }}>{editando ? 'Atualizar' : 'Salvar'}</button>
               <button type="button" onClick={() => { setShowForm(false); setEditando(null) }}
                 className="border border-gray-200 text-gray-500 text-sm px-4 py-2 rounded-lg hover:bg-gray-50">Cancelar</button>
+            </div>
+          </form>
+        </div>
+        </div>
+      )}
+
+      {/* Editar situação e anuidade (modal, só dono/admin) */}
+      {editOrdem && podeAdministrar && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 sm:pt-24 overflow-y-auto"
+          style={{ background: 'rgba(0,0,0,0.45)' }}
+          onClick={() => { if (!salvandoOrdem) setEditOrdem(null) }}>
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-800">Editar situação</p>
+              <p className="text-xs text-gray-400 mt-0.5 truncate">{editOrdem.membro.nome}</p>
+            </div>
+            <button type="button" onClick={() => setEditOrdem(null)} disabled={!!salvandoOrdem} aria-label="Fechar"
+              className="w-10 h-10 -mr-3 -mt-2 flex items-center justify-center flex-shrink-0 text-gray-300 hover:text-gray-500 disabled:opacity-50">
+              <X size={15} />
+            </button>
+          </div>
+          <form onSubmit={salvarEdicaoOrdem} className="space-y-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">Situação</p>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Situação">
+                {SITUACOES.map(s => {
+                  const ativo = editOrdem.situacao === s.id
+                  return (
+                    <button key={s.id} type="button" aria-pressed={ativo}
+                      onClick={() => setEditOrdem({ ...editOrdem, situacao: s.id, erro: '' })}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold border transition-all"
+                      style={ativo
+                        ? { borderColor: s.cor, color: s.cor, background: s.fundo }
+                        : { borderColor: '#e5e7eb', color: '#9ca3af', background: '#fff' }}>
+                      {s.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <label className="block">
+              <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">Vencimento da anuidade</span>
+              <input type="date" value={editOrdem.vencimento}
+                onChange={e => setEditOrdem({ ...editOrdem, vencimento: e.target.value, erro: '' })}
+                className={inp} />
+            </label>
+            {editOrdem.erro && (
+              <p className="text-xs rounded-lg px-3 py-2" style={{ background: '#fef2f2', color: '#991b1b' }}>{editOrdem.erro}</p>
+            )}
+            <div className="flex gap-2">
+              <button type="submit" disabled={!!salvandoOrdem}
+                className="text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-60"
+                style={{ background: '#c0392b' }}>{salvandoOrdem ? 'Salvando...' : 'Salvar'}</button>
+              <button type="button" onClick={() => setEditOrdem(null)} disabled={!!salvandoOrdem}
+                className="border border-gray-200 text-gray-500 text-sm px-4 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-60">Cancelar</button>
             </div>
           </form>
         </div>
@@ -469,6 +564,17 @@ export default function MembrosPage() {
                             {fmtDataBR(m.anuidade_vencimento)}{vencida ? ' (vencida)' : ''}
                           </span>
                         </LinhaDado>
+                        <div className="flex flex-col sm:flex-row gap-2 pt-1.5">
+                          <button type="button" onClick={() => registrarAnuidadePaga(m)} disabled={!!salvandoOrdem}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide text-white disabled:opacity-60"
+                            style={{ background: '#15803d' }}>
+                            <BadgeCheck size={13} /> {salvandoOrdem === m.id ? 'Salvando...' : 'Anuidade paga'}
+                          </button>
+                          <button type="button" onClick={() => abrirEdicaoOrdem(m)} disabled={!!salvandoOrdem}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-60">
+                            <Pencil size={12} /> Editar situação
+                          </button>
+                        </div>
                       </div>
                     </details>
                   )

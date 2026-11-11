@@ -5,6 +5,7 @@
 // - nascimento, iniciação, elevação, situação, anuidade, e-mail e telefone vêm da função
 //   membros_dados_pessoais(), que só devolve linhas para dono e admin.
 import { supabase } from '@/lib/supabase'
+import { parseDataLocal, paraISOData } from '@/lib/datas'
 
 /** Colunas comuns de membros (legíveis por qualquer conta aprovada). */
 export const COLUNAS_MEMBRO = 'id, nome, matricula, status, data_entrada, cargo, created_at'
@@ -68,4 +69,35 @@ export function juntarDadosPessoais<T extends { id: string }>(membros: T[], dado
     void _id
     return { ...m, ...resto } as T & Partial<Omit<DadosPessoais, 'id'>>
   })
+}
+
+/**
+ * Novo vencimento ao registrar a anuidade paga: soma 1 ano ao vencimento atual se
+ * ele ainda estiver no futuro (não perde dias pagos adiantado); senão, 1 ano a partir de hoje.
+ * 29/02 + 1 ano vira 28/02 (não pula para março).
+ */
+export function proximoVencimentoAnuidade(atual: string | null | undefined, hoje: Date): string {
+  const d = parseDataLocal(atual)
+  const base = d && d > hoje ? d : hoje
+  const ano = base.getFullYear() + 1, mes = base.getMonth()
+  const dia = Math.min(base.getDate(), new Date(ano, mes + 1, 0).getDate())
+  return paraISOData(new Date(ano, mes, dia))
+}
+
+/**
+ * Grava situação e vencimento da anuidade de UM membro (só dono/admin).
+ * Usa a função do banco membros_atualizar_dados_ordem (migração 20261111c), porque
+ * as contas logadas não gravam essas colunas direto na tabela.
+ * Lança Error com a mensagem do banco em caso de falha.
+ */
+export async function atualizarDadosOrdem(id: string, situacao: Situacao | null, anuidadeVencimento: string | null) {
+  if (!id) throw new Error('Membro não informado.')
+  if (situacao !== null && !SITUACOES.some(s => s.id === situacao)) throw new Error('Situação inválida.')
+  if (anuidadeVencimento !== null && !parseDataLocal(anuidadeVencimento)) throw new Error('Data de vencimento inválida.')
+  const { error } = await supabase.rpc('membros_atualizar_dados_ordem', {
+    p_id: id,
+    p_situacao: situacao,
+    p_anuidade_vencimento: anuidadeVencimento,
+  })
+  if (error) throw new Error(error.message)
 }
