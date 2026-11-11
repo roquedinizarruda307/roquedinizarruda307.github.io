@@ -124,6 +124,9 @@ begin
   if not has_function_privilege('authenticated', 'public.membros_dados_pessoais()', 'execute') then
     raise exception 'Função membros_dados_pessoais sem permissão para authenticated. Migração desfeita.';
   end if;
+  if has_function_privilege('anon', 'public.membros_dados_pessoais()', 'execute') then
+    raise exception 'Função membros_dados_pessoais executável por anon. Migração desfeita.';
+  end if;
   if has_column_privilege('authenticated', 'public.membros', 'data_nascimento', 'select') then
     raise exception 'data_nascimento ainda legível por authenticated. Migração desfeita.';
   end if;

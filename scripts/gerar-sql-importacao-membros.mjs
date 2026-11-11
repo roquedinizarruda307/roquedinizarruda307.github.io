@@ -137,7 +137,14 @@ for (const [i, r] of linhas.slice(1).entries()) {
   const onde = nomeSite
     ? `(matricula = ${sqlStr(id)} or (coalesce(trim(matricula), '') = '' and upper(trim(nome)) = upper(${sqlStr(nomeSite)})))`
     : `matricula = ${sqlStr(id)}`
-  updates.push(`update public.membros set ${set} where ${onde};`)
+  // matrícula não é UNIQUE no banco: cada UPDATE confere quantas linhas pegou.
+  // > 1 linha = ambiguidade -> raise exception (desfaz tudo); 0 linha = só aviso no fim.
+  updates.push([
+    `  update public.membros set ${set} where ${onde};`,
+    `  get diagnostics n = row_count;`,
+    `  if n > 1 then raise exception 'Matrícula % casou % membros (esperado no máximo 1). Importação desfeita.', ${sqlStr(id)}, n; end if;`,
+    `  if n = 0 then sem_par := sem_par || ${sqlStr(id)}::text; end if;`,
+  ].join('\n'))
 }
 
 console.log(`Linhas na planilha: ${linhas.length - 1} | updates gerados: ${updates.length} | via mapa de nomes: ${Object.keys(NOME_SEM_MATRICULA).filter(k => vistos.has(k)).length} | avisos: ${problemas.length}`)
@@ -165,7 +172,15 @@ begin
   end loop;
 end $$;
 
+-- Atualizações (uma por membro da planilha)
+do $$
+declare n bigint; sem_par text[] := '{}';
+begin
 ${updates.join('\n')}
+  if cardinality(sem_par) > 0 then
+    raise notice 'Aviso: % matrícula(s) da planilha sem membro no site (0 linhas): %', cardinality(sem_par), array_to_string(sem_par, ', ');
+  end if;
+end $$;
 
 -- Verificação: contagens iguais antes e depois (senão desfaz tudo)
 do $$
